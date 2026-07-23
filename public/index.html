@@ -3,17 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lumio Studio — Live stream to YouTube &amp; Facebook from your browser</title>
-  <meta name="description" content="StreamYard-style browser studio: capture your camera, mic and screen, brand your scene, and go live to YouTube, Facebook or any RTMP destination." />
+  <title>Lumio — Live streaming studio &amp; webinars in your browser</title>
+  <meta name="description" content="StreamYard-style studio: bring guests on screen, broadcast to YouTube, Facebook and RTMP, and host webinars with unlimited viewers on your own watch page." />
   <link rel="icon" href="img/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/studio.css" />
 </head>
-<body>
+<body class="home-body">
 
-  <!-- ================= TOP BAR ================= -->
   <header class="topbar">
     <a class="brand" href="/">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
@@ -25,124 +24,91 @@
       </svg>
       <span>Lumio <em>Studio</em></span>
     </a>
-    <div class="topbar-status">
-      <span id="live-pill" class="live-pill idle"><span class="dot"></span><span id="live-label">OFFLINE</span></span>
-      <span id="live-timer" class="live-timer hidden">00:00:00</span>
-    </div>
-    <div class="topbar-actions">
-      <button id="btn-record" class="btn btn-ghost" title="Also save a local recording while live">⏺ Record locally: <b>off</b></button>
-      <button id="btn-golive" class="btn btn-live" disabled>Go Live</button>
-    </div>
+    <div class="topbar-status"></div>
+    <div class="topbar-actions"></div>
   </header>
 
-  <!-- ================= SETUP GATE ================= -->
-  <div id="gate" class="gate">
-    <div class="gate-card">
-      <h1>Welcome to <span class="grad-text">Lumio Studio</span></h1>
-      <p>Broadcast live to YouTube, Facebook or any RTMP server — straight from your browser.
-         Pick your camera and microphone to enter the studio.</p>
-      <label class="field"><span>Your display name</span>
-        <input id="gate-name" type="text" maxlength="40" placeholder="e.g. Towfique Ahmed" />
-      </label>
-      <div class="field-row">
-        <label class="field"><span>Camera</span><select id="gate-cam"></select></label>
-        <label class="field"><span>Microphone</span><select id="gate-mic"></select></label>
-      </div>
-      <p id="gate-error" class="gate-error hidden"></p>
-      <button id="gate-enter" class="btn btn-primary btn-lg">Enter studio →</button>
-      <p class="gate-note">Lumio needs camera &amp; mic permission. Nothing is sent anywhere until <b>you</b> press Go&nbsp;Live.</p>
-    </div>
-  </div>
+  <main class="home">
+    <section class="hero">
+      <h1>Your <span class="grad-text">live studio</span> for streams&nbsp;&amp;&nbsp;webinars</h1>
+      <p>Bring up to 10 people on screen from anywhere. Broadcast to YouTube, Facebook
+         and any RTMP server — and to your own Lumio watch page, where an unlimited
+         audience can watch and chat.</p>
+    </section>
 
-  <!-- ================= STUDIO ================= -->
-  <main id="studio" class="studio hidden">
-    <section class="stage">
-      <div class="canvas-wrap">
-        <canvas id="program" width="1280" height="720"></canvas>
-        <div id="stage-hint" class="stage-hint hidden"></div>
+    <section class="home-cards">
+      <div class="home-card">
+        <h3>🎬 Host a broadcast</h3>
+        <p>Create a studio, invite guests backstage, put them on stage, go live everywhere at once.</p>
+        <input id="create-title" type="text" maxlength="120" placeholder="Broadcast title (optional)" />
+        <button id="create-btn" class="btn btn-primary btn-lg">Create broadcast →</button>
+        <p id="create-error" class="gate-error hidden"></p>
       </div>
 
-      <!-- device / scene controls -->
-      <div class="controls">
-        <div class="ctl-group">
-          <button id="btn-mic" class="ctl on" title="Toggle microphone">🎙<span>Mic</span></button>
-          <button id="btn-cam" class="ctl on" title="Toggle camera">📷<span>Cam</span></button>
-          <button id="btn-screen" class="ctl" title="Share your screen">🖥<span>Share</span></button>
-        </div>
-        <div class="ctl-group layouts" role="radiogroup" aria-label="Layout">
-          <button class="ctl layout on" data-layout="solo" title="Camera only">▣<span>Solo</span></button>
-          <button class="ctl layout" data-layout="screen" title="Screen only">⬜<span>Screen</span></button>
-          <button class="ctl layout" data-layout="pip" title="Screen + camera bubble">◲<span>PiP</span></button>
-          <button class="ctl layout" data-layout="split" title="Screen and camera side by side">◫<span>Split</span></button>
-        </div>
-        <div class="ctl-group">
-          <div class="vu" title="Mic level"><div id="vu-bar"></div></div>
-        </div>
+      <div class="home-card">
+        <h3>🎤 Join as a guest</h3>
+        <p>Got an invite from a host? Paste the link or the broadcast code to join backstage.</p>
+        <input id="join-code" type="text" placeholder="Invite link or code" />
+        <button id="join-btn" class="btn btn-ghost btn-lg">Join backstage →</button>
+      </div>
+
+      <div class="home-card">
+        <h3>👁 Watch a broadcast</h3>
+        <p>Watch a webinar or live show and join the conversation in live chat.</p>
+        <input id="watch-code" type="text" placeholder="Watch link or code" />
+        <button id="watch-btn" class="btn btn-ghost btn-lg">Watch →</button>
       </div>
     </section>
 
-    <!-- ================= SIDEBAR ================= -->
-    <aside class="sidebar">
-      <nav class="tabs">
-        <button class="tab on" data-tab="destinations">Destinations</button>
-        <button class="tab" data-tab="brand">Brand</button>
-        <button class="tab" data-tab="log">Status</button>
-      </nav>
-
-      <!-- Destinations -->
-      <section class="tab-panel" id="tab-destinations">
-        <p class="panel-hint">Add every platform you want to broadcast to. Stream keys never leave your Lumio server.</p>
-        <div id="dest-list" class="dest-list"></div>
-        <div class="dest-add">
-          <select id="dest-platform">
-            <option value="youtube">YouTube Live</option>
-            <option value="facebook">Facebook Live</option>
-            <option value="custom">Custom RTMP</option>
-          </select>
-          <input id="dest-key" type="password" placeholder="Stream key" autocomplete="off" />
-          <button id="dest-add-btn" class="btn btn-primary btn-sm">Add</button>
-        </div>
-        <details class="dest-help">
-          <summary>Where do I find my stream key?</summary>
-          <p><b>YouTube:</b> YouTube Studio → Go live → Stream — copy the <i>Stream key</i> (Lumio uses the RTMPS ingest <code>a.rtmps.youtube.com/live2</code>).</p>
-          <p><b>Facebook:</b> facebook.com/live/producer → Go live → Streaming software — copy the <i>Stream key</i> (ingest <code>live-api-s.facebook.com:443/rtmp</code>).</p>
-          <p><b>Custom:</b> paste a full <code>rtmp://</code> or <code>rtmps://</code> URL including the key.</p>
-        </details>
-      </section>
-
-      <!-- Brand -->
-      <section class="tab-panel hidden" id="tab-brand">
-        <label class="field"><span>Display name (lower third)</span>
-          <input id="brand-name" type="text" maxlength="40" />
-        </label>
-        <label class="field"><span>Headline / title bar</span>
-          <input id="brand-title" type="text" maxlength="80" placeholder="e.g. Product Launch — Live Q&A" />
-        </label>
-        <label class="field"><span>Brand color</span>
-          <input id="brand-color" type="color" value="#7c3aed" />
-        </label>
-        <label class="check"><input id="brand-show-name" type="checkbox" checked /> <span>Show name banner</span></label>
-        <label class="check"><input id="brand-show-title" type="checkbox" /> <span>Show headline bar</span></label>
-        <label class="check"><input id="brand-mirror" type="checkbox" /> <span>Mirror my camera</span></label>
-      </section>
-
-      <!-- Status / log -->
-      <section class="tab-panel hidden" id="tab-log">
-        <div class="stat-grid">
-          <div class="stat"><span>State</span><b id="stat-state">Idle</b></div>
-          <div class="stat"><span>Destinations</span><b id="stat-dest">0</b></div>
-          <div class="stat"><span>Bitrate target</span><b>3.5 Mbps</b></div>
-          <div class="stat"><span>Output</span><b>720p · 30fps</b></div>
-        </div>
-        <pre id="log" class="log" aria-live="polite">Ready. Add a destination, then press Go Live.</pre>
-      </section>
-    </aside>
+    <section class="home-how">
+      <h2>How it works</h2>
+      <div class="how-grid">
+        <div class="how"><b>1 · Studio</b><span>Host and guests connect camera &amp; mic in the browser — no installs. Guests wait backstage until you add them to the stage.</span></div>
+        <div class="how"><b>2 · Compose</b><span>Grid, spotlight, sidebar and screen-share layouts, brand colors, name labels, headline bar and featured chat comments.</span></div>
+        <div class="how"><b>3 · Broadcast</b><span>One click streams to YouTube, Facebook, custom RTMP — and your Lumio watch page, where unlimited viewers watch &amp; chat.</span></div>
+      </div>
+    </section>
   </main>
 
-  <!-- hidden media elements feeding the compositor -->
-  <video id="v-cam" autoplay playsinline muted></video>
-  <video id="v-screen" autoplay playsinline muted></video>
+  <script>
+    (() => {
+      'use strict';
+      const $ = s => document.querySelector(s);
 
-  <script src="js/studio.js"></script>
+      $('#create-btn').addEventListener('click', async () => {
+        const err = $('#create-error');
+        err.classList.add('hidden');
+        $('#create-btn').disabled = true;
+        try {
+          const res = await fetch('/api/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: $('#create-title').value.trim() }),
+          });
+          const room = await res.json();
+          localStorage.setItem(`lumio.hostkey.${room.id}`, room.hostKey);
+          location.href = `/studio/${room.id}`;
+        } catch {
+          err.textContent = 'Could not create a broadcast — is the server running?';
+          err.classList.remove('hidden');
+          $('#create-btn').disabled = false;
+        }
+      });
+
+      const extractId = raw => {
+        const m = String(raw).match(/[a-z0-9]{10}/);
+        return m ? m[0] : null;
+      };
+      const go = (input, prefix) => {
+        const id = extractId(input.value.trim());
+        if (id) location.href = `/${prefix}/${id}`;
+        else { input.focus(); input.classList.add('shake'); setTimeout(() => input.classList.remove('shake'), 500); }
+      };
+      $('#join-btn').addEventListener('click', () => go($('#join-code'), 'guest'));
+      $('#watch-btn').addEventListener('click', () => go($('#watch-code'), 'watch'));
+      $('#join-code').addEventListener('keydown', e => { if (e.key === 'Enter') go(e.target, 'guest'); });
+      $('#watch-code').addEventListener('keydown', e => { if (e.key === 'Enter') go(e.target, 'watch'); });
+    })();
+  </script>
 </body>
 </html>

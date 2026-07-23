@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumio Studio — Host</title>
+  <meta name="description" content="Host your live stream or webinar: bring guests on screen, brand your scene, and broadcast to YouTube, Facebook, RTMP and your Lumio watch page." />
+  <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/studio.css" />
+</head>
+<body>
+
+  <!-- ================= TOP BAR ================= -->
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="url(#lg)"/>
+        <polygon points="13,10 23,16 13,22" fill="#fff"/>
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="32" y2="32">
+          <stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/>
+        </linearGradient></defs>
+      </svg>
+      <span>Lumio <em>Studio</em></span>
+    </a>
+    <div class="topbar-status">
+      <span id="live-pill" class="live-pill idle"><span class="dot"></span><span id="live-label">OFFLINE</span></span>
+      <span id="live-timer" class="live-timer hidden">00:00:00</span>
+      <span id="viewer-pill" class="viewer-pill" title="People watching your Lumio watch page">👁 <b id="viewer-count">0</b></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-invite" class="btn btn-ghost">🔗 Invite</button>
+      <button id="btn-record" class="btn btn-ghost" title="Also save a local recording while live">⏺ <b>off</b></button>
+      <button id="btn-golive" class="btn btn-live" disabled>Go Live</button>
+    </div>
+  </header>
+
+  <!-- ================= SETUP GATE ================= -->
+  <div id="gate" class="gate">
+    <div class="gate-card">
+      <h1>Host <span class="grad-text" id="gate-title">your broadcast</span></h1>
+      <p>Check your camera and microphone, then enter the studio. Invite guests on
+         screen and broadcast to YouTube, Facebook, RTMP — and your own watch page
+         with unlimited viewers.</p>
+      <video id="gate-preview" class="gate-preview" autoplay playsinline muted></video>
+      <label class="field"><span>Your display name</span>
+        <input id="gate-name" type="text" maxlength="40" placeholder="e.g. Towfique Ahmed" />
+      </label>
+      <div class="field-row">
+        <label class="field"><span>Camera</span><select id="gate-cam"></select></label>
+        <label class="field"><span>Microphone</span><select id="gate-mic"></select></label>
+      </div>
+      <p id="gate-error" class="gate-error hidden"></p>
+      <button id="gate-enter" class="btn btn-primary btn-lg">Enter studio →</button>
+      <p class="gate-note">Nothing is broadcast until <b>you</b> press Go&nbsp;Live.</p>
+    </div>
+  </div>
+
+  <!-- ================= STUDIO ================= -->
+  <main id="studio" class="studio hidden">
+    <section class="stage">
+      <div class="canvas-wrap">
+        <canvas id="program" width="1280" height="720"></canvas>
+      </div>
+
+      <!-- backstage strip -->
+      <div id="backstage-strip" class="backstage-strip hidden">
+        <span class="backstage-label">Backstage</span>
+        <div id="backstage-tiles" class="backstage-tiles"></div>
+      </div>
+
+      <!-- device / scene controls -->
+      <div class="controls">
+        <div class="ctl-group">
+          <button id="btn-mic" class="ctl on" title="Toggle microphone">🎙<span>Mic</span></button>
+          <button id="btn-cam" class="ctl on" title="Toggle camera">📷<span>Cam</span></button>
+          <button id="btn-screen" class="ctl" title="Share your screen">🖥<span>Share</span></button>
+        </div>
+        <div class="ctl-group layouts" role="radiogroup" aria-label="Layout">
+          <button class="ctl layout on" data-layout="grid" title="Everyone in a grid">▦<span>Grid</span></button>
+          <button class="ctl layout" data-layout="spotlight" title="One big + strip">◰<span>Spotlight</span></button>
+          <button class="ctl layout" data-layout="sidebar" title="Screen + faces column">◧<span>Sidebar</span></button>
+          <button class="ctl layout" data-layout="screen" title="Screen share only">⬜<span>Screen</span></button>
+        </div>
+        <div class="ctl-group">
+          <div class="vu" title="Mic level"><div id="vu-bar"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SIDEBAR ================= -->
+    <aside class="sidebar">
+      <nav class="tabs">
+        <button class="tab on" data-tab="people">People <b id="people-count"></b></button>
+        <button class="tab" data-tab="chat">Chat <b id="chat-badge"></b></button>
+        <button class="tab" data-tab="destinations">Outputs</button>
+        <button class="tab" data-tab="brand">Brand</button>
+        <button class="tab" data-tab="log">Status</button>
+      </nav>
+
+      <!-- People -->
+      <section class="tab-panel" id="tab-people">
+        <p class="panel-hint">Guests join backstage from the invite link. Add them to
+           the stage when you're ready — only on-stage people are seen &amp; heard by
+           your audience.</p>
+        <h4 class="people-h">On stage</h4>
+        <div id="list-stage" class="people-list"></div>
+        <h4 class="people-h">Backstage</h4>
+        <div id="list-backstage" class="people-list"></div>
+      </section>
+
+      <!-- Chat -->
+      <section class="tab-panel hidden" id="tab-chat">
+        <div id="chat-list" class="chat-list"></div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" maxlength="500" placeholder="Message everyone…" autocomplete="off" />
+          <button class="btn btn-primary btn-sm" type="submit">Send</button>
+        </form>
+        <p class="panel-hint">Click a message to feature it on the stream; click again to remove it.</p>
+      </section>
+
+      <!-- Destinations -->
+      <section class="tab-panel hidden" id="tab-destinations">
+        <div class="dest lumio-dest enabled">
+          <div class="dest-info">
+            <b class="lumio">Lumio watch page</b>
+            <span>Unlimited viewers · always on while live</span>
+          </div>
+        </div>
+
+        <div class="connect-row">
+          <button id="connect-youtube" class="btn btn-connect yt hidden">▶&nbsp; Connect YouTube</button>
+          <button id="connect-facebook" class="btn btn-connect fb hidden">ⓕ&nbsp; Connect Facebook</button>
+        </div>
+        <p id="connect-hint" class="panel-hint hidden">Sign in once and Lumio creates the broadcast and fetches the
+           stream key for you — no copy-pasting. Accounts are linked to <b>your</b> Lumio server only.</p>
+        <p id="connect-unconfigured" class="panel-hint hidden">One-click connections are off because this server has no
+           Google/Meta API credentials. Add them to <code>.env</code> (see README) — or use a stream key below.</p>
+
+        <div id="dest-list" class="dest-list"></div>
+
+        <details class="dest-help" id="manual-add">
+          <summary>Add a destination with a stream key instead</summary>
+          <div class="dest-add">
+            <select id="dest-platform">
+              <option value="youtube">YouTube Live</option>
+              <option value="facebook">Facebook Live</option>
+              <option value="custom">Custom RTMP</option>
+            </select>
+            <input id="dest-key" type="password" placeholder="Stream key" autocomplete="off" />
+            <button id="dest-add-btn" class="btn btn-primary btn-sm">Add</button>
+          </div>
+          <p><b>YouTube:</b> YouTube Studio → Go live → Stream — copy the <i>Stream key</i> (ingest <code>a.rtmps.youtube.com/live2</code>).</p>
+          <p><b>Facebook:</b> facebook.com/live/producer → Streaming software — copy the <i>Stream key</i> (ingest <code>live-api-s.facebook.com:443/rtmp</code>). A persistent key also works for Facebook groups.</p>
+          <p><b>Custom:</b> paste a full <code>rtmp://</code> or <code>rtmps://</code> URL including the key (Twitch, restream servers, nginx-rtmp…).</p>
+        </details>
+      </section>
+
+      <!-- Brand -->
+      <section class="tab-panel hidden" id="tab-brand">
+        <label class="field"><span>Broadcast title / headline bar</span>
+          <input id="brand-title" type="text" maxlength="80" placeholder="e.g. Product Launch — Live Q&A" />
+        </label>
+        <label class="field"><span>Brand color</span>
+          <input id="brand-color" type="color" value="#7c3aed" />
+        </label>
+        <label class="check"><input id="brand-show-title" type="checkbox" /> <span>Show headline bar</span></label>
+        <label class="check"><input id="brand-show-names" type="checkbox" checked /> <span>Show name labels on tiles</span></label>
+        <label class="check"><input id="brand-mirror" type="checkbox" /> <span>Mirror my camera (preview only)</span></label>
+      </section>
+
+      <!-- Status / log -->
+      <section class="tab-panel hidden" id="tab-log">
+        <div class="stat-grid">
+          <div class="stat"><span>State</span><b id="stat-state">Idle</b></div>
+          <div class="stat"><span>RTMP outputs</span><b id="stat-dest">0</b></div>
+          <div class="stat"><span>On stage</span><b id="stat-stage">1</b></div>
+          <div class="stat"><span>Output</span><b>720p · 30fps</b></div>
+        </div>
+        <pre id="log" class="log" aria-live="polite">Ready. Invite guests, add destinations, then press Go Live.</pre>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ================= INVITE MODAL ================= -->
+  <div id="invite-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Invite people</h3>
+      <label class="field"><span>Guest link — joins your backstage, you put them on stage</span>
+        <div class="copy-row"><input id="invite-guest" type="text" readonly /><button class="btn btn-primary btn-sm" data-copy="invite-guest">Copy</button></div>
+      </label>
+      <label class="field"><span>Watch page — unlimited viewers, live chat</span>
+        <div class="copy-row"><input id="invite-watch" type="text" readonly /><button class="btn btn-primary btn-sm" data-copy="invite-watch">Copy</button></div>
+      </label>
+      <button id="invite-close" class="btn btn-ghost">Close</button>
+    </div>
+  </div>
+
+  <div id="media-pool" class="media-pool" aria-hidden="true"></div>
+
+  <script src="/js/mesh.js"></script>
+  <script src="/js/studio.js"></script>
+</body>
+</html>
