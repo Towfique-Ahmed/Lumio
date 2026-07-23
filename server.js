@@ -170,6 +170,7 @@ setInterval(() => {
 /* ------------------------------- HTTP ------------------------------- */
 
 const app = express();
+app.set('trust proxy', true); // respect X-Forwarded-Proto behind nginx/hosting proxies
 app.use(express.json({ limit: '16kb' }));
 
 app.get('/healthz', (_req, res) => {
@@ -214,8 +215,13 @@ setInterval(() => {
 
 function baseUrl(req) {
   if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/$/, '');
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  return `${proto}://${req.headers.host}`;
+  let proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  // Public hosts are always HTTPS in practice (Google/Meta refuse plain-http
+  // redirect URIs) — if a proxy hid the original scheme, assume https so the
+  // redirect_uri matches what the operator registered.
+  if (proto === 'http' && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(String(host))) proto = 'https';
+  return `${proto}://${host}`;
 }
 
 const redirectUri = (req, p) => `${baseUrl(req)}/auth/${p}/callback`;
@@ -225,9 +231,13 @@ app.get('/auth/:platform', (req, res) => {
   if (!platforms.configured[p]) return res.status(404).send('This platform is not configured on the server.');
   const state = crypto.randomBytes(16).toString('base64url');
   oauthStates.set(state, Date.now() + 10 * 60 * 1000);
+  const uri = redirectUri(req, p);
+  // If the platform reports redirect_uri_mismatch, this log line is the URI
+  // that must be registered in the Google/Meta console, character for character.
+  console.log(`[auth] ${p} start — redirect_uri: ${uri}`);
   const url = p === 'youtube'
-    ? platforms.youtubeAuthUrl(redirectUri(req, 'youtube'), state)
-    : platforms.facebookAuthUrl(redirectUri(req, 'facebook'), state);
+    ? platforms.youtubeAuthUrl(uri, state)
+    : platforms.facebookAuthUrl(uri, state);
   res.redirect(url);
 });
 
