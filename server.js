@@ -180,9 +180,18 @@ app.get('/healthz', (_req, res) => {
 /* ------------------------- OAuth destinations ------------------------- */
 
 /* Which platform integrations have API credentials configured. Connect
- * buttons are always shown — unconfigured ones open the in-app setup wizard. */
-app.get('/api/config', (_req, res) => {
-  res.json({ youtube: platforms.configured.youtube, facebook: platforms.configured.facebook });
+ * buttons are always shown — unconfigured ones open the in-app setup wizard.
+ * redirectUris are what THIS server will send to Google/Meta — they must be
+ * registered in the consoles character-for-character. */
+app.get('/api/config', (req, res) => {
+  res.json({
+    youtube: platforms.configured.youtube,
+    facebook: platforms.configured.facebook,
+    redirectUris: {
+      youtube: redirectUri(req, 'youtube'),
+      facebook: redirectUri(req, 'facebook'),
+    },
+  });
 });
 
 /* In-app setup wizard target: store API credentials pasted in the studio.

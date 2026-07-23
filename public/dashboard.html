@@ -43,6 +43,15 @@
         <button id="add-rtmp" class="btn btn-ghost">＋ Custom RTMP / stream key</button>
       </div>
       <div id="dest-list" class="dest-list dash-dests"></div>
+      <details class="dest-help" id="redirect-help">
+        <summary>Getting “redirect_uri_mismatch”? Check these values</summary>
+        <p>This server sends these callback URLs — they must be registered <b>exactly</b>:</p>
+        <p>Google Cloud Console → Credentials → your OAuth client → <i>Authorized redirect URIs</i>:</p>
+        <div class="copy-row"><input id="ruri-youtube" type="text" readonly /><button class="btn btn-primary btn-sm" data-copy="ruri-youtube">Copy</button></div>
+        <p style="margin-top:10px">Meta app → Facebook Login → Settings → <i>Valid OAuth Redirect URIs</i>:</p>
+        <div class="copy-row"><input id="ruri-facebook" type="text" readonly /><button class="btn btn-primary btn-sm" data-copy="ruri-facebook">Copy</button></div>
+        <p style="margin-top:10px">If the value here starts with <code>http://</code> instead of <code>https://</code>, your server is running old code — redeploy Lumio or set <code>PUBLIC_URL</code> in <code>.env</code>.</p>
+      </details>
     </section>
 
     <!-- ============ BROADCASTS ============ -->
