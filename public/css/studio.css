@@ -368,8 +368,15 @@ a { color: inherit; text-decoration: none; }
   background: var(--card-2); border: 1px solid var(--border); border-radius: 7px;
   color: var(--text); font: 500 0.76rem 'Inter', sans-serif; padding: 4px 6px;
 }
-.dest-stale { font-size: 0.75rem; color: #fcd34d; }
+.dest-stale { font-size: 0.75rem; color: #fcd34d; display: block; }
 .dest-mode { font-style: normal; font-weight: 500; font-size: 0.7rem; color: var(--muted); }
+
+/* setup wizard */
+.setup-steps { margin: 0 0 18px 20px; display: flex; flex-direction: column; gap: 7px; }
+.setup-steps li { font-size: 0.88rem; color: var(--muted); line-height: 1.45; }
+.setup-steps b { color: var(--text); }
+.setup-steps a { color: #c4b5fd; text-decoration: underline; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 
 /* ---------------- guest stage ---------------- */
 

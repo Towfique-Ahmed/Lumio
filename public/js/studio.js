@@ -735,12 +735,17 @@
     $('#invite-modal').classList.remove('hidden');
   });
   $('#invite-close').addEventListener('click', () => $('#invite-modal').classList.add('hidden'));
-  $$('#invite-modal [data-copy]').forEach(b => b.addEventListener('click', async () => {
+
+  /* Copy buttons (invite links, setup redirect URI, …). */
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
     const input = $('#' + b.dataset.copy);
+    if (!input) return;
     try { await navigator.clipboard.writeText(input.value); } catch { input.select(); document.execCommand('copy'); }
     b.textContent = 'Copied!';
     setTimeout(() => { b.textContent = 'Copy'; }, 1500);
-  }));
+  });
 
   /* ------------------------------ chat ------------------------------ */
 
@@ -798,15 +803,12 @@
 
   function saveDests() { save(DEST_KEY, destinations); }
 
-  /* Which platforms can be connected with one click (server-side API creds). */
+  /* Which platforms already have server-side API credentials. The Connect
+   * buttons always work: configured platforms jump straight to the OAuth
+   * popup, unconfigured ones open the in-app setup wizard first. */
   fetch('/api/config').then(r => r.json()).then(cfg => {
     Object.assign(platformConfig, cfg);
-    $('#connect-youtube').classList.toggle('hidden', !cfg.youtube);
-    $('#connect-facebook').classList.toggle('hidden', !cfg.facebook);
-    $('#connect-hint').classList.toggle('hidden', !(cfg.youtube || cfg.facebook));
-    $('#connect-unconfigured').classList.toggle('hidden', !!(cfg.youtube && cfg.facebook));
-    if (!cfg.youtube && !cfg.facebook) $('#manual-add').open = true;
-  }).catch(() => { $('#connect-unconfigured').classList.remove('hidden'); });
+  }).catch(() => {});
 
   /* Verify stored OAuth connections still exist on the server. */
   destinations.filter(d => d.mode === 'oauth').forEach(d => {
@@ -816,6 +818,7 @@
         if (info.connection) { // refresh display data (name, pages list)
           d.name = info.connection.name;
           d.avatar = info.connection.avatar;
+          d.liveEnabled = info.connection.liveEnabled !== false;
           if (d.platform === 'facebook') d.targets = info.connection.targets;
           saveDests(); renderDests();
         }
@@ -832,8 +835,87 @@
     window.open(`/auth/${platform}`, 'lumio-auth', `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
   }
 
-  $('#connect-youtube').addEventListener('click', () => openAuthPopup('youtube'));
-  $('#connect-facebook').addEventListener('click', () => openAuthPopup('facebook'));
+  function connectClick(platform) {
+    if (platformConfig[platform]) openAuthPopup(platform);
+    else openSetup(platform);
+  }
+
+  $('#connect-youtube').addEventListener('click', () => connectClick('youtube'));
+  $('#connect-facebook').addEventListener('click', () => connectClick('facebook'));
+
+  /* ---- first-run setup wizard (server has no API credentials yet) ---- */
+
+  const SETUP = {
+    youtube: {
+      title: 'Set up the YouTube connection',
+      idLabel: 'OAuth client ID',
+      secretLabel: 'OAuth client secret',
+      steps: [
+        'Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create (or pick) a project.',
+        'APIs &amp; Services → <b>Enable APIs</b> → enable <b>YouTube Data API v3</b>.',
+        'OAuth consent screen → External → add yourself as a test user.',
+        'Credentials → <b>Create credentials → OAuth client ID → Web application</b>.',
+        'Add the <b>redirect URI below</b>, create, then copy the client ID &amp; secret here.',
+      ],
+    },
+    facebook: {
+      title: 'Set up the Facebook connection',
+      idLabel: 'App ID',
+      secretLabel: 'App secret',
+      steps: [
+        'Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Meta for Developers</a> → <b>Create app</b> (type: Business).',
+        'Add the <b>Facebook Login</b> product.',
+        'Facebook Login → Settings → add the <b>redirect URI below</b> to “Valid OAuth Redirect URIs”.',
+        'App settings → Basic → copy the <b>App ID</b> and <b>App secret</b> here.',
+        'While the app is in Development mode, add your account under App roles → Testers.',
+      ],
+    },
+  };
+
+  let setupPlatform = null;
+
+  function openSetup(platform) {
+    setupPlatform = platform;
+    const s = SETUP[platform];
+    $('#setup-title').textContent = s.title;
+    $('#setup-id-label').textContent = s.idLabel;
+    $('#setup-secret-label').textContent = s.secretLabel;
+    $('#setup-steps').innerHTML = s.steps.map(x => `<li>${x}</li>`).join('');
+    $('#setup-redirect').value = `${location.origin}/auth/${platform}/callback`;
+    $('#setup-client-id').value = '';
+    $('#setup-client-secret').value = '';
+    $('#setup-error').classList.add('hidden');
+    $('#setup-modal').classList.remove('hidden');
+  }
+
+  $('#setup-cancel').addEventListener('click', () => $('#setup-modal').classList.add('hidden'));
+
+  $('#setup-save').addEventListener('click', async () => {
+    const err = $('#setup-error');
+    err.classList.add('hidden');
+    $('#setup-save').disabled = true;
+    try {
+      const res = await fetch(`/api/setup/${setupPlatform}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: $('#setup-client-id').value,
+          clientSecret: $('#setup-client-secret').value,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      platformConfig[setupPlatform] = true;
+      $('#setup-modal').classList.add('hidden');
+      logLine(`✓ ${PLATFORM_LABEL[setupPlatform]} API credentials saved — opening sign-in…`);
+      openAuthPopup(setupPlatform);
+    } catch (e) {
+      err.textContent = e.message;
+      err.classList.remove('hidden');
+    } finally {
+      $('#setup-save').disabled = false;
+    }
+  });
 
   window.addEventListener('message', ev => {
     if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'lumio-auth') return;
@@ -846,8 +928,12 @@
     if (c.platform === 'youtube') {
       destinations.push({
         mode: 'oauth', platform: 'youtube', connId: c.id,
-        name: c.name, avatar: c.avatar, privacy: 'public', enabled: true,
+        name: c.name, avatar: c.avatar, privacy: 'public',
+        liveEnabled: c.liveEnabled !== false, enabled: true,
       });
+      if (c.liveEnabled === false) {
+        logLine('⚠ This channel does not have live streaming enabled yet — enable it in YouTube Studio (youtube.com/features). YouTube may take up to 24h to activate it.');
+      }
     } else {
       const profile = (c.targets || []).find(t => t.type === 'profile');
       destinations.push({
@@ -875,7 +961,10 @@
     if (d.stale) {
       sub = '<span class="dest-stale">Connection expired</span>';
     } else if (d.platform === 'youtube') {
-      sub = `<select class="dest-sub" data-privacy="${i}" title="YouTube privacy">
+      const warn = d.liveEnabled === false
+        ? '<span class="dest-stale">⚠ Enable live streaming in YouTube Studio first</span>'
+        : '';
+      sub = `${warn}<select class="dest-sub" data-privacy="${i}" title="YouTube privacy">
                ${['public', 'unlisted', 'private'].map(p =>
                  `<option value="${p}" ${d.privacy === p ? 'selected' : ''}>${p}</option>`).join('')}
              </select>`;
