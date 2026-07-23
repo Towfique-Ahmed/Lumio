@@ -1,36 +1,94 @@
 # Lumio Studio 🎥
 
-**A StreamYard-style live streaming studio that runs in your browser** — capture your
-camera, microphone and screen, compose a branded scene, and broadcast live to
-**YouTube**, **Facebook** and any custom RTMP server, all at once.
+**A StreamYard-style live streaming & webinar studio that runs in the browser.**
+Bring multiple people on screen from anywhere, compose a branded program feed,
+broadcast it to **YouTube**, **Facebook** and any **RTMP** server — and to your
+own **watch page**, where an unlimited audience can watch over HLS and join the
+live chat.
 
 ```
-browser studio ──WebM over WebSocket──▶ Node server ──▶ FFmpeg ──▶ RTMP(S)
-(camera / mic / screen → canvas + audio mixer)              ├─▶ YouTube Live
-                                                            ├─▶ Facebook Live
-                                                            └─▶ Custom RTMP
+                 WebRTC mesh (media stays peer-to-peer)
+   guest ◀──────────────────────────────────────────────▶ guest
+     ▲                                                     ▲
+     └──────────────▶  HOST BROWSER  ◀─────────────────────┘
+                      canvas compositor + audio mixer
+                      (grid / spotlight / sidebar / screen)
+                              │  WebM over WebSocket
+                              ▼
+                        Node relay server ──▶ FFmpeg ─┬─▶ HLS  ─▶ /watch page (∞ viewers + chat)
+                                                      ├─▶ RTMPS ─▶ YouTube Live
+                                                      ├─▶ RTMPS ─▶ Facebook Live
+                                                      └─▶ RTMP  ─▶ Custom (Twitch, nginx-rtmp, …)
 ```
+
+## 🔬 How StreamYard works (research that shaped this app)
+
+StreamYard was studied as the reference product before building Lumio:
+
+1. **Browser-first studio.** Hosts and guests never install anything; capture,
+   compositing and control all happen in the browser.
+2. **Guests via invite link → backstage → stage.** The host shares a guest
+   link; guests land in a green room to check camera/mic, then wait
+   *backstage*. Only when the host adds them to the *stage* are they visible
+   and audible to the audience. StreamYard allows up to 10 people on screen,
+   with more waiting backstage, and offers preset layouts (grid, spotlight,
+   sidebar/screen-share, full-screen) plus branding, overlays and
+   featured comments.
+3. **WebRTC in, RTMP out.** Participant media travels over WebRTC (real-time,
+   sub-second). The composed program is then re-encoded and pushed over RTMP(S)
+   to YouTube/Facebook/LinkedIn/etc. simultaneously ("multistreaming") —
+   browsers cannot speak RTMP, so a relay/encode hop is mandatory.
+4. **Webinars ("StreamYard On-Air").** For audiences beyond the platforms,
+   StreamYard hosts a registration + watch page with live chat, emoji
+   reactions and a viewer counter, scaling from ten to tens of thousands of
+   viewers — viewers receive a one-way stream (not WebRTC), which is what
+   makes large audiences cheap.
+
+Sources:
+[StreamYard guest invites](https://support.streamyard.com/hc/en-us/articles/4405100913428-How-do-I-invite-guests-to-my-StreamYard-stream),
+[Greenroom](https://support.streamyard.com/hc/en-us/articles/6342816437268-Using-the-Greenroom),
+[guest instructions](https://support.streamyard.com/hc/en-us/articles/360043291612-Guest-instructions),
+[on-screen participants & layouts](https://streamyard.com/blog/invite-guests-to-stream-for-free),
+[On-Air webinars](https://support.streamyard.com/hc/en-us/articles/10920795244308-Create-a-Webinar-with-StreamYard-On-Air),
+[watching on StreamYard](https://support.streamyard.com/hc/en-us/articles/360043298792-Can-people-watch-on-StreamYard),
+[WebRTC SFU architectures](https://getstream.io/resources/projects/webrtc/architectures/sfu/),
+[WebRTC live-streaming app comparison](https://www.hirevoipdeveloper.com/blog/live-streaming-apps-using-webrtc/).
+
+Lumio mirrors this architecture at self-hosted scale: a **WebRTC mesh**
+replaces StreamYard's SFU for the studio (great up to ~6–10 people), the
+**host's browser** is the compositor, and the server relays the program feed
+to **HLS** (unlimited one-way viewers) and **RTMP** (multistreaming).
 
 ## ✨ Features
 
-- **In-browser studio** — camera + microphone capture with device pickers,
-  one-click screen sharing (with tab/system audio when available).
-- **Scene compositor** — four layouts rendered live on a 720p/30fps canvas:
-  - **Solo** — camera full-frame
-  - **Screen** — screen share full-frame
-  - **PiP** — screen with a camera bubble
-  - **Split** — screen and camera side by side
-- **Branding** — lower-third name banner, headline/title bar, brand color,
-  camera mirroring, and an automatic "camera off" avatar card.
-- **Audio mixer** — Web Audio graph mixing your mic with screen-share audio,
-  live VU meter, one-click mute.
-- **Multistreaming** — add YouTube, Facebook and custom RTMP destinations,
-  toggle each on/off, and broadcast to all enabled ones simultaneously
-  (FFmpeg `tee` muxer, `onfail=ignore` so one bad destination doesn't kill the rest).
-- **Local recording** — optionally save a WebM recording of your program feed
-  while you stream.
-- **Live status** — LIVE badge + timer burned into the program feed, connection
-  state, and a live FFmpeg log panel in the sidebar.
+- **Multi-person stage** — guests join from a link, wait **backstage**, and the
+  host puts up to **10 people on screen**. Everyone sees and hears each other
+  in real time over a WebRTC mesh; media never touches the server.
+- **Green room** — guests check camera, mic and display name before joining.
+- **Host-controlled stage** — add/remove people from the stage, spotlight
+  someone, kick disruptive guests. Backstage guests are never seen or heard by
+  the audience (their audio is excluded from the program mix).
+- **Scene compositor** — live 720p/30fps canvas with StreamYard-style layouts:
+  - **Grid** — everyone on stage, auto-arranged
+  - **Spotlight** — one big + the rest in a strip
+  - **Sidebar** — screen share large + faces in a column
+  - **Screen** — presentation full-frame
+- **Screen sharing** — host *and* guests can share a screen (with tab/system
+  audio when available); the share becomes the presentation source.
+- **Branding** — headline bar, brand color, per-tile name labels, camera
+  mirroring, cam-off avatar cards, LIVE badge with timer.
+- **Webinar watch page (unlimited viewers)** — every broadcast gets
+  `/watch/<id>`: HLS playback (hls.js bundled + Safari native), waiting/live/
+  ended states, **live chat** and a **viewer counter**. HLS segments are plain
+  static files, so audience size is limited only by the web server/CDN — not
+  by the studio.
+- **Live chat everywhere** — viewers, guests and host share one chat; the host
+  can click any message to **feature it on the stream** as a lower-third.
+- **Multistreaming** — YouTube, Facebook and custom RTMP(S) destinations with
+  per-destination toggles (FFmpeg `tee` muxer, `onfail=ignore` so one bad
+  destination doesn't kill the rest). The watch page runs even with zero RTMP
+  destinations — that's webinar mode.
+- **Local recording** — optionally save a WebM of the program feed while live.
 
 ## 🚀 Getting started
 
@@ -46,27 +104,26 @@ npm install
 npm start                      # → http://localhost:3000
 ```
 
-> **Note on HTTPS:** browsers only allow camera/screen capture on `localhost` or
-> HTTPS origins. For anything beyond local use, put the server behind TLS
-> (Caddy, nginx + Let's Encrypt, or a platform that terminates TLS for you).
-> The WebSocket automatically upgrades to `wss://` on HTTPS pages.
+> **HTTPS matters:** browsers only allow camera/screen capture on `localhost`
+> or HTTPS origins — and your guests will be remote, so put the server behind
+> TLS (Caddy, nginx + Let's Encrypt, or a platform that terminates TLS).
+> WebSockets automatically upgrade to `wss://` on HTTPS pages.
 
-## 📡 Going live
+## 📡 Hosting a broadcast
 
-1. Open the studio, allow camera/mic, and enter your display name.
-2. In **Destinations**, add your platforms:
-   - **YouTube** — YouTube Studio → *Go live* → *Stream* → copy the **Stream key**.
-     Lumio pushes to the RTMPS ingest `rtmps://a.rtmps.youtube.com:443/live2/KEY`.
-   - **Facebook** — facebook.com/live/producer → *Go live* → *Streaming software* →
-     copy the **Stream key**. Lumio pushes to
-     `rtmps://live-api-s.facebook.com:443/rtmp/KEY`.
-   - **Custom RTMP** — paste a full `rtmp://` or `rtmps://` URL (Twitch, restream
-     servers, nginx-rtmp, …).
-3. Set up your scene (layout, screen share, branding) — the canvas preview **is**
-   the program feed your viewers will see.
-4. Press **Go Live**. Start the broadcast on the platform side if it doesn't
-   auto-start (YouTube goes live automatically once it receives data; Facebook
-   shows a preview you confirm).
+1. **Create** — on the home page, give your broadcast a title and hit
+   *Create broadcast*. You land in the studio as host (a host key in your
+   browser proves it's yours).
+2. **Invite** — the **Invite** button gives you two links:
+   - **Guest link** (`/guest/<id>`) — for people who should appear on screen.
+   - **Watch link** (`/watch/<id>`) — for the audience.
+3. **Stage your guests** — guests appear in the backstage strip and the
+   People tab. Click *Add to stage* when you're ready for them.
+4. **Destinations** (optional) — add YouTube / Facebook stream keys or a custom
+   RTMP URL. Skip this entirely for a watch-page-only webinar.
+5. **Go Live** — the canvas preview *is* the program your audience sees.
+   Viewers on the watch page connect automatically; platform streams start on
+   the platform side (YouTube auto-detects; Facebook asks you to confirm).
 
 Stream keys are stored in your browser's `localStorage` and are only ever sent
 to **your own** Lumio server, which passes them straight to FFmpeg.
@@ -75,35 +132,57 @@ to **your own** Lumio server, which passes them straight to FFmpeg.
 
 | Stage | Technology |
 | --- | --- |
+| Studio media | WebRTC full mesh (STUN: Google), perfect-negotiation pattern |
+| Signaling / rooms / chat | WebSocket `/ws` — join, roster, stage control, RTC relay, chat |
 | Capture | `getUserMedia` (cam/mic), `getDisplayMedia` (screen + audio) |
-| Compositing | `<canvas>` 1280×720 @ 30fps — layouts, banners, LIVE badge |
-| Audio mix | Web Audio API → `MediaStreamAudioDestinationNode` |
-| Encoding (browser) | `canvas.captureStream()` + `MediaRecorder` (WebM, H.264/VP9/VP8 + Opus, ~3.5 Mbps) |
-| Transport | Binary WebSocket chunks (500 ms) to the Node server |
-| Encoding (server) | FFmpeg: `libx264 veryfast zerolatency` + AAC 160k, GOP 2s |
-| Delivery | `-f flv` single output, or `-f tee` for simultaneous multistreaming |
+| Compositing | `<canvas>` 1280×720 @ 30fps — layouts, labels, branding, featured comments |
+| Audio mix | Web Audio graph: host mic + screen audio + every **on-stage** guest |
+| Encoding (browser) | `canvas.captureStream()` + `MediaRecorder` (WebM, ~3.5 Mbps) |
+| Transport | Binary WebSocket chunks (500 ms) to `/stream` |
+| Encoding (server) | FFmpeg: `libx264 veryfast zerolatency` + AAC 160k, GOP 2 s |
+| Audience delivery | HLS (2 s segments, `delete_segments`) served statically at `/hls/<room>/` |
+| Platform delivery | `-f tee` → `[f=hls]…\|[f=flv:onfail=ignore]rtmp(s)://…` |
 
-Browsers can't speak RTMP, so a relay hop is mandatory — this is the same
-architecture StreamYard, Restream Studio and similar tools use (they relay via
-their cloud; Lumio relays via your own server).
+**Why a mesh and not an SFU?** StreamYard runs a cloud SFU because it serves
+thousands of concurrent studios. For a self-hosted tool, a mesh keeps the
+server out of the media path entirely (each participant uploads one stream per
+peer). With ≤ 6 participants it's excellent; toward 10 it depends on
+everyone's upload bandwidth. The relay/HLS/RTMP side is unaffected — viewers
+never join the mesh, which is exactly how "unlimited viewers" stays cheap.
 
 ## 📁 Project structure
 
 ```
-├── server.js              # Express + WebSocket relay → FFmpeg → RTMP(S)
+├── server.js                  # Express + WS: rooms, signaling, chat, FFmpeg relay (HLS+RTMP)
 ├── package.json
 └── public/
-    ├── index.html         # Setup gate + studio UI
+    ├── index.html             # Landing: create / join / watch
+    ├── studio.html            # Host studio
+    ├── guest.html             # Guest green room + stage
+    ├── watch.html             # Webinar watch page
     ├── css/studio.css
     ├── img/favicon.svg
-    └── js/studio.js       # Capture, compositor, mixer, recorder, transport
+    ├── vendor/hls.min.js      # hls.js (bundled — no CDN dependency)
+    └── js/
+        ├── mesh.js            # Shared signaling client + WebRTC mesh
+        ├── studio.js          # Host: compositor, mixer, stage control, broadcast
+        ├── guest.js           # Guest: green room, mesh tiles, chat
+        └── watch.js           # Viewer: HLS player, chat, statuses
 ```
 
-## ⚠️ Limitations
+## ⚠️ Limitations & scaling notes
 
-- Single-host studio (no remote guests yet — that requires WebRTC SFU
-  infrastructure; natural v2 territory).
-- The relay server transcodes with x264 `veryfast`; budget ~1–2 CPU cores per
-  concurrent stream, or point `FFMPEG_PATH` at a build with hardware encoders.
+- **Mesh, not SFU** — each on-screen participant maintains a connection to
+  every other. Fine to ~6, workable to 10 with good upstream bandwidth. For
+  more, put an SFU (mediasoup / LiveKit / Janus) behind the same signaling.
+- **No TURN server bundled** — participants behind strict/symmetric NAT may
+  fail to connect peer-to-peer. Add a TURN server (coturn) to the
+  `ICE_SERVERS` list in `public/js/mesh.js` for production use.
+- **Viewer latency** is HLS-typical (~6–12 s). Chat is instant (WebSocket).
+- The relay transcodes with x264 `veryfast`; budget ~1–2 CPU cores per live
+  broadcast, or point `FFMPEG_PATH` at a build with hardware encoders.
+- "Unlimited" viewers means the studio doesn't limit them — actual capacity is
+  your server's static-file throughput. For very large audiences, put a CDN or
+  nginx cache in front of `/hls/`.
 - Platforms require the stream to be **started/confirmed** on their side
-  (YouTube auto-detects; Facebook asks you to confirm the preview).
+  (YouTube auto-detects; Facebook shows a preview you confirm).
