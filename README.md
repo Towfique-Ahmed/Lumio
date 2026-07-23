@@ -168,22 +168,28 @@ Notes:
 And with zero setup, **manual stream-key entry** (YouTube / Facebook / custom
 RTMP) still works from the same tab.
 
-## 📡 Hosting a broadcast
+## 📡 Hosting a broadcast (the StreamYard flow)
 
-1. **Create** — on the home page, give your broadcast a title and hit
-   *Create broadcast*. You land in the studio as host (a host key in your
-   browser proves it's yours).
-2. **Invite** — the **Invite** button gives you two links:
-   - **Guest link** (`/guest/<id>`) — for people who should appear on screen.
-   - **Watch link** (`/watch/<id>`) — for the audience.
-3. **Stage your guests** — guests appear in the backstage strip and the
-   People tab. Click *Add to stage* when you're ready for them.
-4. **Destinations** (optional) — click **Connect YouTube** / **Connect
-   Facebook** (OAuth, see above) or paste stream keys / a custom RTMP URL.
-   Skip this entirely for a watch-page-only webinar.
-5. **Go Live** — the canvas preview *is* the program your audience sees.
-   Viewers on the watch page connect automatically; platform streams start on
-   the platform side (YouTube auto-detects; Facebook asks you to confirm).
+1. **Dashboard** (`/dashboard`) — connect your **destinations** once
+   (YouTube / Facebook via OAuth, or stream keys), then hit
+   **＋ Create a broadcast**: title, description, and checkboxes for where it
+   should stream. Broadcasts are saved on the server and listed on the
+   dashboard (live state, guest/watch links, delete).
+2. **Green room** — camera/mic check with preflight warnings (HTTPS
+   requirement, FFmpeg presence) before you enter.
+3. **Studio** — everyone (including you) appears in the **bottom strip**;
+   click **Add to stage** to put someone on screen, exactly like StreamYard.
+   Layout presets sit on the stage itself; the right sidebar has
+   **Comments** (audience chat, click to feature on stream), **Private chat**
+   (host & guests only — the audience never sees it), **Banners**
+   (lower-thirds + scrolling tickers), **People**, **Brand** and
+   **Settings** (per-broadcast outputs + status log).
+4. **Invite** — guest link (`/guest/<id>`) for people who should be on
+   screen; watch link (`/watch/<id>`) for the audience.
+5. **Go Live** — a confirmation lists exactly where you're about to stream
+   (watch page + selected destinations, with warnings for an empty stage or
+   missing FFmpeg). YouTube broadcasts/Facebook live videos are created
+   automatically for connected accounts; watch URLs appear in the log.
 
 Stream keys are stored in your browser's `localStorage` and are only ever sent
 to **your own** Lumio server, which passes them straight to FFmpeg.
@@ -218,8 +224,9 @@ never join the mesh, which is exactly how "unlimited viewers" stays cheap.
 ├── .env.example               # PUBLIC_URL + Google/Meta API credentials template
 ├── package.json
 └── public/
-    ├── index.html             # Landing: create / join / watch
-    ├── studio.html            # Host studio
+    ├── index.html             # Landing: dashboard / join / watch
+    ├── dashboard.html         # Dashboard: destinations + broadcasts + create modal
+    ├── studio.html            # Host studio (strip, layouts, sidebar, banners)
     ├── guest.html             # Guest green room + stage
     ├── watch.html             # Webinar watch page
     ├── css/studio.css
@@ -227,8 +234,9 @@ never join the mesh, which is exactly how "unlimited viewers" stays cheap.
     ├── vendor/hls.min.js      # hls.js (bundled — no CDN dependency)
     └── js/
         ├── mesh.js            # Shared signaling client + WebRTC mesh
-        ├── studio.js          # Host: compositor, mixer, stage control, broadcast
-        ├── guest.js           # Guest: green room, mesh tiles, chat
+        ├── dashboard.js       # Destinations manager + broadcast list/create
+        ├── studio.js          # Host: compositor, mixer, stage strip, banners, broadcast
+        ├── guest.js           # Guest: green room, mesh tiles, comments/private chat
         └── watch.js           # Viewer: HLS player, chat, statuses
 ```
 

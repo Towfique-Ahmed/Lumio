@@ -25,6 +25,7 @@
     onStage: false,
     live: false,
     chatUnread: 0,
+    commentsUnread: 0,
   };
 
   /** peerId -> { peerId, name, role, onStage, camStream, screenStream,
@@ -129,7 +130,7 @@
     const msg = await joined;
     state.selfId = msg.peerId;
     setLivePill(msg.live);
-    (msg.chat || []).forEach(appendChat);
+    (msg.chat || []).forEach(routeChat);
 
     mesh = new LumioMesh({
       signal,
@@ -158,7 +159,7 @@
       render();
     });
     signal.on('rtc', m => mesh.handleSignal(m.from, m.data));
-    signal.on('chat', appendChat);
+    signal.on('chat', routeChat);
     signal.on('live', m => setLivePill(m.live));
     signal.on('title', m => { document.title = `Join: ${m.title} — Lumio`; });
 
@@ -349,28 +350,39 @@
     $$('.tab').forEach(x => x.classList.toggle('on', x === t));
     $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-${t.dataset.tab}`));
     if (t.dataset.tab === 'chat') { state.chatUnread = 0; $('#chat-badge').textContent = ''; }
+    if (t.dataset.tab === 'comments') { state.commentsUnread = 0; $('#comments-badge').textContent = ''; }
   }));
 
-  /* ------------------------------ chat ------------------------------ */
+  /* --------------------- comments & private chat --------------------- */
 
-  function appendChat(m) {
-    const list = $('#chat-list');
+  function routeChat(m) {
+    const isStudio = m.scope === 'studio';
+    const list = $(isStudio ? '#chat-list' : '#comments-list');
     const div = document.createElement('div');
     div.className = `chat-msg from-${m.from}`;
     div.innerHTML = `<b>${U.escapeHtml(m.name)}</b><span>${U.escapeHtml(m.text)}</span><i>${U.fmtTime(m.ts)}</i>`;
     list.appendChild(div);
     list.scrollTop = list.scrollHeight;
-    if ($('#tab-chat').classList.contains('hidden')) {
-      state.chatUnread++;
-      $('#chat-badge').textContent = state.chatUnread;
+    const tab = $(isStudio ? '#tab-chat' : '#tab-comments');
+    if (tab.classList.contains('hidden')) {
+      if (isStudio) { state.chatUnread++; $('#chat-badge').textContent = state.chatUnread; }
+      else { state.commentsUnread++; $('#comments-badge').textContent = state.commentsUnread; }
     }
   }
+
+  $('#comments-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = $('#comments-input').value.trim();
+    if (!text) return;
+    signal.send({ type: 'chat', text, scope: 'public' });
+    $('#comments-input').value = '';
+  });
 
   $('#chat-form').addEventListener('submit', e => {
     e.preventDefault();
     const text = $('#chat-input').value.trim();
     if (!text) return;
-    signal.send({ type: 'chat', text });
+    signal.send({ type: 'chat', text, scope: 'studio' });
     $('#chat-input').value = '';
   });
 

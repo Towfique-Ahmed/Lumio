@@ -34,6 +34,8 @@ const platforms = require('./lib/platforms');
 const PORT = process.env.PORT || 3000;
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const HLS_ROOT = process.env.HLS_DIR || path.join(__dirname, '.hls');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '.data');
+const BROADCAST_FILE = path.join(DATA_DIR, 'broadcasts.json');
 
 const MAX_PARTICIPANTS = 10;   // host + guests connected to the studio mesh
 const CHAT_HISTORY = 200;
@@ -51,13 +53,8 @@ fs.mkdirSync(HLS_ROOT, { recursive: true });
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
-function createRoom(title) {
-  const id = crypto.randomBytes(8).toString('base64url').replace(/[^a-z0-9]/gi, '').toLowerCase().padEnd(10, '0').slice(0, 10);
-  const room = {
-    id,
-    hostKey: crypto.randomBytes(16).toString('base64url'),
-    title: String(title || 'Lumio broadcast').slice(0, 120),
-    createdAt: Date.now(),
+function runtimeDefaults() {
+  return {
     lastActive: Date.now(),
     peers: new Map(),     // peerId -> { ws, role, name, onStage, camStreamId, screenStreamId }
     viewers: new Set(),   // ws
@@ -68,7 +65,45 @@ function createRoom(title) {
     mediaWs: null,
     liveCleanups: [],
   };
+}
+
+/* Broadcast records survive restarts, StreamYard-dashboard style. Only the
+ * durable fields are persisted; live state is runtime-only. */
+function persistRooms() {
+  const out = {};
+  for (const [id, r] of rooms) {
+    out[id] = {
+      id, hostKey: r.hostKey, title: r.title, description: r.description || '',
+      owner: r.owner || null, createdAt: r.createdAt,
+    };
+  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(BROADCAST_FILE, JSON.stringify(out, null, 2), { mode: 0o600 });
+}
+
+function loadRooms() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(BROADCAST_FILE, 'utf8'));
+    for (const rec of Object.values(raw)) {
+      rooms.set(rec.id, Object.assign({}, rec, runtimeDefaults()));
+    }
+    if (rooms.size) console.log(`[boot] restored ${rooms.size} broadcast(s)`);
+  } catch { /* first run */ }
+}
+loadRooms();
+
+function createRoom(title, description, owner) {
+  const id = crypto.randomBytes(8).toString('base64url').replace(/[^a-z0-9]/gi, '').toLowerCase().padEnd(10, '0').slice(0, 10);
+  const room = Object.assign({
+    id,
+    hostKey: crypto.randomBytes(16).toString('base64url'),
+    title: String(title || 'Untitled broadcast').slice(0, 120),
+    description: String(description || '').slice(0, 2000),
+    owner: typeof owner === 'string' ? owner.slice(0, 64) : null,
+    createdAt: Date.now(),
+  }, runtimeDefaults());
   rooms.set(id, room);
+  persistRooms();
   return room;
 }
 
@@ -121,13 +156,12 @@ function roomStatus(room) {
   };
 }
 
-/* Every 30 min, drop rooms nobody has touched in ROOM_TTL_MS. */
+/* Broadcast records are durable (dashboard); just sweep stale HLS output. */
 setInterval(() => {
   const now = Date.now();
-  for (const [id, room] of rooms) {
+  for (const room of rooms.values()) {
     const empty = room.peers.size === 0 && room.viewers.size === 0 && !room.live;
     if (empty && now - room.lastActive > ROOM_TTL_MS) {
-      rooms.delete(id);
       fs.rm(roomHlsDir(room), { recursive: true, force: true }, () => {});
     }
   }
@@ -241,8 +275,39 @@ app.delete('/api/connections/:id', (req, res) => {
 });
 
 app.post('/api/rooms', (req, res) => {
-  const room = createRoom(req.body && req.body.title);
+  const b = req.body || {};
+  const room = createRoom(b.title, b.description, b.owner);
   res.json({ id: room.id, hostKey: room.hostKey, title: room.title });
+});
+
+/* Dashboard: list/delete this browser's broadcasts (matched by owner token). */
+app.get('/api/broadcasts', (req, res) => {
+  const owner = String(req.query.owner || '');
+  if (!owner) return res.json({ broadcasts: [] });
+  const list = [...rooms.values()]
+    .filter(r => r.owner === owner)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map(r => ({
+      id: r.id, title: r.title, description: r.description || '',
+      live: r.live, createdAt: r.createdAt,
+      participants: r.peers.size, viewers: r.viewers.size,
+    }));
+  res.json({ broadcasts: list });
+});
+
+app.delete('/api/broadcasts/:id', (req, res) => {
+  const room = rooms.get(String(req.params.id));
+  if (!room) return res.status(404).json({ error: 'Not found.' });
+  if (!room.owner || room.owner !== String(req.query.owner || '')) {
+    return res.status(403).json({ error: 'Not your broadcast.' });
+  }
+  if (room.live) return res.status(409).json({ error: 'Broadcast is live — end it first.' });
+  for (const p of room.peers.values()) { try { p.ws.close(); } catch { /* ok */ } }
+  for (const v of room.viewers) { try { v.close(); } catch { /* ok */ } }
+  rooms.delete(room.id);
+  persistRooms();
+  fs.rm(roomHlsDir(room), { recursive: true, force: true }, () => {});
+  res.json({ ok: true });
 });
 
 app.get('/api/rooms/:id', (req, res) => {
@@ -252,6 +317,7 @@ app.get('/api/rooms/:id', (req, res) => {
     exists: true,
     id: room.id,
     title: room.title,
+    description: room.description || '',
     live: room.live,
     viewers: room.viewers.size,
     participants: room.peers.size,
@@ -274,6 +340,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /* Pretty routes → pages (room id validated client-side too). */
 const page = f => (_req, res) => res.sendFile(path.join(__dirname, 'public', f));
+app.get('/dashboard', page('dashboard.html'));
 app.get('/studio/:id', page('studio.html'));
 app.get('/guest/:id', page('guest.html'));
 app.get('/watch/:id', page('watch.html'));
@@ -450,7 +517,8 @@ signalWss.on('connection', ws => {
         room.viewers.add(ws);
         sendTo(ws, {
           type: 'joined', role, title: room.title, live: room.live,
-          viewers: room.viewers.size, chat: room.chat.slice(-50),
+          viewers: room.viewers.size,
+          chat: room.chat.filter(m => m.scope !== 'studio').slice(-50),
         });
         broadcastViewerCount(room);
         return;
@@ -460,7 +528,9 @@ signalWss.on('connection', ws => {
       const name = String(msg.name || (role === 'host' ? 'Host' : 'Guest')).slice(0, 40).trim() || 'Guest';
       room.peers.set(peerId, {
         ws, role, name,
-        onStage: role === 'host', // host is always on stage; guests start backstage
+        // Everyone — including the host — starts off-stage and clicks
+        // "Add to stage", exactly like StreamYard.
+        onStage: false,
         camStreamId: typeof msg.camStreamId === 'string' ? msg.camStreamId.slice(0, 80) : null,
         screenStreamId: null,
       });
@@ -479,16 +549,20 @@ signalWss.on('connection', ws => {
     if (!room) return;
     touch(room);
 
-    /* ---------- chat (everyone) ---------- */
+    /* ---------- chat ----------
+     * Two scopes, like StreamYard: 'public' = Comments everyone sees
+     * (viewers included); 'studio' = Private chat between host & guests. */
     if (msg.type === 'chat') {
       const p = peerId ? room.peers.get(peerId) : null;
       const name = p ? p.name : String(msg.name || 'Viewer').slice(0, 40).trim() || 'Viewer';
       const text = String(msg.text || '').slice(0, 500).trim();
       if (!text) return;
-      const entry = { type: 'chat', from: role, name, text, ts: Date.now() };
+      const scope = msg.scope === 'studio' && role !== 'viewer' ? 'studio' : 'public';
+      const entry = { type: 'chat', from: role, name, text, scope, ts: Date.now() };
       room.chat.push(entry);
       if (room.chat.length > CHAT_HISTORY) room.chat.splice(0, room.chat.length - CHAT_HISTORY);
-      broadcastAll(room, entry);
+      if (scope === 'studio') broadcastPeers(room, entry);
+      else broadcastAll(room, entry);
       return;
     }
 
@@ -545,6 +619,7 @@ signalWss.on('connection', ws => {
 
     if (msg.type === 'title') {
       room.title = String(msg.title || '').slice(0, 120) || room.title;
+      persistRooms();
       broadcastAll(room, { type: 'title', title: room.title });
       return;
     }
