@@ -1,8 +1,10 @@
 /* =========================================================================
- * Lumio Studio — host engine
+ * Lumio Studio — host engine (StreamYard-style)
  *
- * getUserMedia + WebRTC mesh (guests) → canvas compositor + Web Audio mixer
- *   → MediaRecorder (WebM) → /stream WS → FFmpeg → HLS watch page + RTMP
+ * Flow: dashboard creates the broadcast → green room → studio.
+ * Everyone (including you) appears in the bottom strip and is added to the
+ * stage with one click. The canvas composes the stage; Go Live streams it
+ * to the Lumio watch page + the destinations picked at creation.
  * ========================================================================= */
 (() => {
   'use strict';
@@ -13,7 +15,6 @@
 
   const W = 1280, H = 720, FPS = 30;
   const DEST_KEY = 'lumio.destinations.v2';
-  const DEST_KEY_V1 = 'lumio.destinations.v1';
   const BRAND_KEY = 'lumio.brand.v2';
   const NAME_KEY = 'lumio.name';
 
@@ -28,7 +29,7 @@
   /* --------------------------- room bootstrap --------------------------- */
 
   const roomId = U.roomIdFromPath();
-  if (!roomId) { location.href = '/'; return; }
+  if (!roomId) { location.href = '/dashboard'; return; }
 
   const keyStore = `lumio.hostkey.${roomId}`;
   const urlKey = new URLSearchParams(location.search).get('key');
@@ -39,8 +40,8 @@
   const hostKey = localStorage.getItem(keyStore);
   if (!hostKey) {
     document.body.innerHTML = '<div class="gate"><div class="gate-card"><h1>Not your studio</h1>' +
-      '<p>This browser has no host key for this broadcast. Create a new broadcast from the home page.</p>' +
-      '<a class="btn btn-primary btn-lg" href="/">← Back to Lumio</a></div></div>';
+      '<p>This browser has no host key for this broadcast. Open it from the dashboard where you created it.</p>' +
+      '<a class="btn btn-primary btn-lg" href="/dashboard">← Back to dashboard</a></div></div>';
     return;
   }
 
@@ -48,6 +49,8 @@
 
   const state = {
     selfId: null,
+    roomTitle: '',
+    roomDesc: localStorage.getItem(`lumio.desc.${roomId}`) || '',
     camStream: null,
     screenStream: null,
     layout: 'grid',
@@ -61,24 +64,27 @@
     mediaWs: null,
     recorder: null,
     timerId: null,
-    featured: null, // { name, text }
+    featured: null,          // featured audience comment { name, text }
+    activeBanner: null,      // { id, text, ticker }
+    commentsUnread: 0,
     chatUnread: 0,
+    serverHasFfmpeg: true,
   };
 
   const brand = Object.assign({
     title: '', color: '#7c3aed', showTitle: false, showNames: true, mirror: false,
   }, load(BRAND_KEY));
 
-  /* Destination entries:
-   *   { mode:'oauth', platform:'youtube',  connId, name, avatar, privacy, enabled, stale? }
-   *   { mode:'oauth', platform:'facebook', connId, name, avatar, targets:[{type,id,name}], targetId, enabled, stale? }
-   *   { mode:'key',   platform:'youtube'|'facebook'|'custom', value, enabled }   */
-  let destinations = load(DEST_KEY) || (load(DEST_KEY_V1) || []).map(d => ({ mode: 'key', ...d }));
-  const platformConfig = { youtube: false, facebook: false };
+  const allDests = load(DEST_KEY) || [];
+  let selection = load(`lumio.sel.${roomId}`);
+  if (!Array.isArray(selection)) {
+    selection = allDests.filter(d => !d.stale).map(d => d.id);
+    save(`lumio.sel.${roomId}`, selection);
+  }
 
-  /** peerId -> participant
-   *  { peerId, name, role, onStage, camStream, screenStream,
-   *    camEl, screenEl, camStreamId, screenStreamId, audio: Map<streamId,{gProg,gMon}> } */
+  let banners = load(`lumio.banners.${roomId}`) || [];
+
+  /** peerId -> participant (self stored under 'self') */
   const participants = new Map();
 
   function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }
@@ -108,7 +114,41 @@
     v.remove();
   }
 
-  /* ------------------------------ setup gate ------------------------------ */
+  /* ------------------------- green room + preflight ------------------------- */
+
+  fetch(`/api/rooms/${roomId}`).then(r => r.json()).then(info => {
+    if (!info.exists) return;
+    state.roomTitle = info.title;
+    if (info.description) state.roomDesc = info.description;
+    $('#gate-title').textContent = info.title;
+    $('#studio-title').textContent = info.title;
+    document.title = `${info.title} — Lumio Studio`;
+  }).catch(() => {});
+
+  function preflight() {
+    const box = $('#preflight');
+    box.innerHTML = '';
+    const insecure = !window.isSecureContext;
+    if (insecure) {
+      box.insertAdjacentHTML('beforeend',
+        `<div class="pf bad">🔒 Browsers block camera &amp; microphone on plain HTTP.
+         Open Lumio via <b>https://</b> or <b>http://localhost</b> — this page
+         (<code>${location.host}</code>) can't capture your camera.</div>`);
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (!insecure) box.insertAdjacentHTML('beforeend',
+        '<div class="pf bad">This browser does not support camera capture — use Chrome, Edge, Firefox or Safari.</div>');
+    }
+    fetch('/healthz').then(r => r.json()).then(h => {
+      state.serverHasFfmpeg = !!h.ffmpeg;
+      if (!h.ffmpeg) {
+        box.insertAdjacentHTML('beforeend',
+          '<div class="pf warn">⚠ FFmpeg is not installed on the Lumio server. The studio and guests work, but <b>Go Live</b> will fail until it is installed (<code>apt install ffmpeg</code>).</div>');
+      }
+    }).catch(() => {
+      box.insertAdjacentHTML('beforeend', '<div class="pf bad">Cannot reach the Lumio server.</div>');
+    });
+  }
 
   async function populateDevices() {
     try {
@@ -153,7 +193,7 @@
     localStorage.setItem(NAME_KEY, name);
 
     participants.set('self', {
-      peerId: 'self', name, role: 'host', onStage: true,
+      peerId: 'self', name, role: 'host', onStage: false,
       camStream: state.camStream, screenStream: null,
       camEl: makeVideoEl(state.camStream), screenEl: null,
       audio: new Map(),
@@ -172,7 +212,7 @@
     $('#gate').classList.add('hidden');
     $('#studio').classList.remove('hidden');
     $('#btn-golive').disabled = false;
-    renderPeople();
+    syncStage();
   });
 
   /* ------------------------- signaling + mesh ------------------------- */
@@ -196,8 +236,7 @@
     const msg = await joined;
     state.selfId = msg.peerId;
     $('#viewer-count').textContent = msg.viewers || 0;
-    if (msg.title) { brand.title = brand.title || msg.title; $('#brand-title').value = brand.title; }
-    (msg.chat || []).forEach(appendChat);
+    (msg.chat || []).forEach(routeChat);
 
     mesh = new LumioMesh({
       signal,
@@ -212,14 +251,16 @@
 
     signal.on('peer-joined', m => { addRemote(m.peer); logLine(`＋ ${m.peer.name} joined backstage.`); });
     signal.on('peer-left', m => removeRemote(m.peerId));
-    signal.on('peer-renamed', m => { const p = participants.get(m.peerId); if (p) { p.name = m.name; renderPeople(); } });
+    signal.on('peer-renamed', m => { const p = participants.get(m.peerId); if (p) { p.name = m.name; syncStage(); } });
     signal.on('peer-media', m => updateRemoteMedia(m));
-    signal.on('stage', m => { const p = participants.get(m.peerId); if (p) { p.onStage = m.onStage; syncStage(); } });
+    signal.on('stage', m => {
+      const p = m.peerId === state.selfId ? self() : participants.get(m.peerId);
+      if (p) { p.onStage = m.onStage; syncStage(); }
+    });
     signal.on('rtc', m => mesh.handleSignal(m.from, m.data));
-    signal.on('chat', appendChat);
+    signal.on('chat', routeChat);
     signal.on('viewers', m => { $('#viewer-count').textContent = m.count; });
 
-    // Connect to everyone already in the room (we initiate as the newcomer).
     (msg.roster || []).filter(p => p.peerId !== state.selfId).forEach(p => {
       addRemote(p);
       mesh.ensurePeer(p.peerId);
@@ -243,7 +284,7 @@
       camStreamId: peer.camStreamId, screenStreamId: peer.screenStreamId,
       audio: new Map(),
     });
-    renderPeople();
+    syncStage();
   }
 
   function removeRemote(peerId) {
@@ -263,7 +304,6 @@
     if (!p) return;
     p.camStreamId = m.camStreamId;
     p.screenStreamId = m.screenStreamId;
-    // Re-classify already-received streams.
     if (p.screenStream && p.screenStream.id !== p.screenStreamId) {
       dropVideoEl(p.screenEl);
       p.screenEl = null;
@@ -286,7 +326,7 @@
         dropVideoEl(p.screenEl);
         p.screenStream = stream;
         p.screenEl = makeVideoEl(stream);
-        if (state.layout === 'grid') setLayout('sidebar');
+        if (state.layout === 'grid' && p.onStage) setLayout('sidebar');
       }
     } else if (!p.camEl || p.camStream !== stream) {
       dropVideoEl(p.camEl);
@@ -379,7 +419,7 @@
 
   function presentation() {
     const s = self();
-    if (s && s.screenStream && ready(s.screenEl)) return s.screenEl;
+    if (s && s.onStage && s.screenStream && ready(s.screenEl)) return s.screenEl;
     for (const p of onStageParts()) if (p.screenStream && ready(p.screenEl)) return p.screenEl;
     return null;
   }
@@ -440,7 +480,6 @@
     ctx.restore();
   }
 
-  /** Lay N tiles out in an auto grid inside a rect, keeping ~16:9 tiles. */
   function gridRects(n, X, Y, Wd, Ht, gap = 12) {
     if (n === 0) return [];
     let best = null;
@@ -476,19 +515,22 @@
     const cast = onStageParts();
     const pres = presentation();
     const top = brand.showTitle && brand.title ? 62 : 16;
-    const bottom = state.featured ? 96 : 16;
+    const bottom = (state.featured || state.activeBanner) ? 96 : 16;
     const innerH = H - top - bottom;
 
     let layout = state.layout;
     if ((layout === 'sidebar' || layout === 'screen') && !pres) layout = 'grid';
 
-    if (layout === 'grid' || cast.length === 0) {
+    if (cast.length === 0 && !pres) {
+      drawEmptyStage();
+    } else if (layout === 'grid') {
       const rects = gridRects(cast.length, 16, top, W - 32, innerH);
       cast.forEach((p, i) => drawTile(p, rects[i].x, rects[i].y, rects[i].w, rects[i].h));
     } else if (layout === 'spotlight') {
       const star = cast.find(p => p.peerId === state.spotlightId) || cast[0];
       const others = cast.filter(p => p !== star);
-      if (others.length === 0) {
+      if (!star) { drawEmptyStage(); }
+      else if (others.length === 0) {
         drawTile(star, 16, top, W - 32, innerH);
       } else {
         const stripH = 128;
@@ -513,8 +555,18 @@
     }
 
     drawBranding();
-    if (state.featured) drawFeatured();
+    if (state.activeBanner) drawBanner();
+    else if (state.featured) drawFeatured();
     if (state.live) drawLiveBadge();
+  }
+
+  function drawEmptyStage() {
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.font = '600 30px Inter, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Your stage is empty', W / 2, H / 2 - 22);
+    ctx.font = '500 20px Inter, sans-serif';
+    ctx.fillText('Click “Add to stage” on a tile below to bring someone on screen', W / 2, H / 2 + 18);
   }
 
   function drawBranding() {
@@ -527,6 +579,43 @@
       ctx.font = '600 24px Inter, sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(brand.title, W / 2, 27);
+    }
+  }
+
+  /** Lower-third banner; ticker variant scrolls right-to-left. */
+  function drawBanner() {
+    const b = state.activeBanner;
+    const bh = 58, by = H - bh - 26;
+    ctx.font = '600 26px Inter, sans-serif';
+
+    if (b.ticker) {
+      ctx.fillStyle = 'rgba(11,7,22,0.9)';
+      ctx.fillRect(0, by, W, bh);
+      ctx.fillStyle = brand.color;
+      ctx.fillRect(0, by, 6, bh);
+      const tw = ctx.measureText(b.text).width;
+      const span = tw + 160;
+      const offset = (performance.now() / 1000 * 110) % span;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      for (let x = W - offset; x < W + span; x += span) {
+        ctx.fillText(b.text, x, by + bh / 2 + 1);
+      }
+      // also fill leftward so the band is never empty
+      for (let x = W - offset - span; x + tw > 0; x -= span) {
+        ctx.fillText(b.text, x, by + bh / 2 + 1);
+      }
+    } else {
+      const tw = ctx.measureText(b.text).width;
+      const bw = Math.min(W - 72, tw + 56);
+      const bx = 36;
+      ctx.fillStyle = 'rgba(11,7,22,0.9)';
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill();
+      ctx.fillStyle = brand.color;
+      ctx.beginPath(); ctx.roundRect(bx, by, 6, bh, [10, 0, 0, 10]); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(b.text, bx + 26, by + bh / 2 + 1, bw - 44);
     }
   }
 
@@ -569,28 +658,95 @@
 
   setInterval(drawFrame, 1000 / FPS);
 
-  /* --------------------------- people & stage --------------------------- */
+  /* ----------------------- strip (Add to stage) ----------------------- */
 
-  function syncStage() {
-    // program audio follows stage state
-    for (const p of remotes()) {
-      for (const nodes of p.audio.values()) nodes.gProg.gain.value = p.onStage ? 1 : 0;
+  const stripEls = new Map(); // key -> { root, video, btn, label }
+
+  function stripTile(key, p, stream, kind) {
+    let t = stripEls.get(key);
+    if (!t) {
+      const root = document.createElement('div');
+      root.className = 'strip-tile';
+      const video = document.createElement('video');
+      video.muted = true; video.autoplay = true; video.playsInline = true;
+      const avatar = document.createElement('div');
+      avatar.className = 'strip-avatar';
+      const label = document.createElement('span');
+      label.className = 'strip-label';
+      const btn = document.createElement('button');
+      btn.className = 'strip-btn';
+      root.append(video, avatar, label, btn);
+      t = { root, video, avatar, label, btn };
+      stripEls.set(key, t);
     }
-    renderPeople();
-    renderBackstageStrip();
-    $('#stat-stage').textContent = onStageParts().length;
+
+    const hasVideo = stream && stream.getVideoTracks().length &&
+      (kind === 'screen' || p.peerId !== 'self' || state.camOn);
+    if (t.video.srcObject !== stream) t.video.srcObject = stream || null;
+    t.video.style.display = hasVideo ? '' : 'none';
+    t.video.classList.toggle('mirror', p.peerId === 'self' && kind === 'cam' && brand.mirror);
+    t.avatar.style.display = hasVideo ? 'none' : '';
+    t.avatar.textContent = (p.name || 'G')[0].toUpperCase();
+
+    t.label.textContent = (kind === 'screen' ? '🖥 ' : '') + p.name + (p.peerId === 'self' ? ' (you)' : '');
+    t.root.classList.toggle('onstage', p.onStage);
+    t.root.classList.toggle('screen', kind === 'screen');
+
+    if (kind === 'screen') {
+      t.btn.style.display = 'none';
+    } else {
+      t.btn.style.display = '';
+      t.btn.textContent = p.onStage ? 'Remove' : 'Add to stage';
+      t.btn.className = 'strip-btn ' + (p.onStage ? 'remove' : 'add');
+      t.btn.onclick = e => { e.stopPropagation(); toggleStage(p); };
+    }
+    return t.root;
   }
 
-  function setStage(peerId, onStage) {
+  function renderStrip() {
+    const strip = $('#strip');
+    const wanted = new Set();
+    const order = [];
+
+    const push = (key, p, stream, kind) => { wanted.add(key); order.push(stripTile(key, p, stream, kind)); };
+
+    const s = self();
+    if (s) {
+      push('self:cam', s, s.camStream, 'cam');
+      if (s.screenStream) push('self:screen', s, s.screenStream, 'screen');
+    }
+    for (const p of remotes()) {
+      push(`${p.peerId}:cam`, p, p.camStream, 'cam');
+      if (p.screenStream) push(`${p.peerId}:screen`, p, p.screenStream, 'screen');
+    }
+
+    for (const [key, t] of stripEls) {
+      if (!wanted.has(key)) { t.video.srcObject = null; t.root.remove(); stripEls.delete(key); }
+    }
+    order.forEach(el => strip.appendChild(el));
+  }
+
+  function toggleStage(p) {
+    const onStage = !p.onStage;
     if (onStage && onStageParts().length >= 10) {
       logLine('✗ Stage is full (10 people max on screen).');
       return;
     }
-    const p = participants.get(peerId);
-    if (!p) return;
+    const peerId = p.peerId === 'self' ? state.selfId : p.peerId;
     p.onStage = onStage;
     signal.send({ type: 'stage', peerId, onStage });
     syncStage();
+  }
+
+  /* --------------------------- people & stage --------------------------- */
+
+  function syncStage() {
+    for (const p of remotes()) {
+      for (const nodes of p.audio.values()) nodes.gProg.gain.value = p.onStage ? 1 : 0;
+    }
+    renderStrip();
+    renderPeople();
+    $('#stat-stage').textContent = onStageParts().length;
   }
 
   function personRow(p) {
@@ -611,13 +767,13 @@
       spot.onclick = () => { state.spotlightId = p.peerId; setLayout('spotlight'); renderPeople(); };
       actions.appendChild(spot);
     }
-    if (p.peerId !== 'self') {
-      const stage = document.createElement('button');
-      stage.className = 'btn btn-sm ' + (p.onStage ? 'btn-ghost' : 'btn-primary');
-      stage.textContent = p.onStage ? 'Remove' : 'Add to stage';
-      stage.onclick = () => setStage(p.peerId, !p.onStage);
-      actions.appendChild(stage);
+    const stage = document.createElement('button');
+    stage.className = 'btn btn-sm ' + (p.onStage ? 'btn-ghost' : 'btn-primary');
+    stage.textContent = p.onStage ? 'Remove' : 'Add to stage';
+    stage.onclick = () => toggleStage(p);
+    actions.appendChild(stage);
 
+    if (p.peerId !== 'self') {
       const kick = document.createElement('button');
       kick.className = 'btn btn-ghost btn-xs';
       kick.textContent = '✕';
@@ -632,39 +788,13 @@
     const all = [...participants.values()];
     const stageList = $('#list-stage'), backList = $('#list-backstage');
     stageList.innerHTML = ''; backList.innerHTML = '';
-    all.filter(p => p.onStage).forEach(p => stageList.appendChild(personRow(p)));
+    const on = all.filter(p => p.onStage);
+    if (!on.length) stageList.innerHTML = '<p class="dest-empty">Nobody on stage yet.</p>';
+    on.forEach(p => stageList.appendChild(personRow(p)));
     const back = all.filter(p => !p.onStage);
     if (!back.length) backList.innerHTML = '<p class="dest-empty">Nobody backstage. Share the guest link from <b>Invite</b>.</p>';
     back.forEach(p => backList.appendChild(personRow(p)));
     $('#people-count').textContent = all.length > 1 ? all.length : '';
-  }
-
-  function renderBackstageStrip() {
-    const back = remotes().filter(p => !p.onStage);
-    $('#backstage-strip').classList.toggle('hidden', back.length === 0);
-    const tiles = $('#backstage-tiles');
-    [...tiles.querySelectorAll('video')].forEach(v => { v.srcObject = null; });
-    tiles.innerHTML = '';
-    back.forEach(p => {
-      const t = document.createElement('div');
-      t.className = 'bs-tile';
-      t.title = `${p.name} — click to add to stage`;
-      if (p.camStream) {
-        // A dedicated preview element — the compositor keeps its own copy.
-        const v = document.createElement('video');
-        v.className = 'bs-video';
-        v.muted = true; v.autoplay = true; v.playsInline = true;
-        v.srcObject = p.camStream;
-        t.appendChild(v);
-      } else {
-        t.textContent = (p.name || 'G')[0].toUpperCase();
-      }
-      const label = document.createElement('span');
-      label.textContent = p.name;
-      t.appendChild(label);
-      t.onclick = () => setStage(p.peerId, true);
-      tiles.appendChild(t);
-    });
   }
 
   /* ------------------------------ controls ------------------------------ */
@@ -682,6 +812,7 @@
     state.camStream.getVideoTracks().forEach(t => { t.enabled = state.camOn; });
     $('#btn-cam').classList.toggle('on', state.camOn);
     $('#btn-cam').classList.toggle('off', !state.camOn);
+    renderStrip();
   });
 
   $('#btn-screen').addEventListener('click', async () => {
@@ -699,7 +830,8 @@
     state.screenStream.getTracks().forEach(track => mesh.addTrackToAll(track, state.screenStream));
     state.screenStream.getVideoTracks()[0].addEventListener('ended', stopScreen);
     $('#btn-screen').classList.add('on');
-    if (state.layout === 'grid') setLayout('sidebar');
+    if (state.layout === 'grid' && s.onStage) setLayout('sidebar');
+    syncStage();
   });
 
   function stopScreen() {
@@ -712,18 +844,20 @@
     if (screenGain) { try { screenGain.disconnect(); } catch { /* ok */ } screenGain = null; }
     $('#btn-screen').classList.remove('on');
     if (state.layout === 'sidebar' || state.layout === 'screen') setLayout('grid');
+    syncStage();
   }
 
   function setLayout(l) {
     state.layout = l;
-    $$('.layout').forEach(b => b.classList.toggle('on', b.dataset.layout === l));
+    $$('.lay').forEach(b => b.classList.toggle('on', b.dataset.layout === l));
   }
-  $$('.layout').forEach(b => b.addEventListener('click', () => setLayout(b.dataset.layout)));
+  $$('.lay').forEach(b => b.addEventListener('click', () => setLayout(b.dataset.layout)));
 
   /* tabs */
   $$('.tab').forEach(t => t.addEventListener('click', () => {
     $$('.tab').forEach(x => x.classList.toggle('on', x === t));
     $$('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-${t.dataset.tab}`));
+    if (t.dataset.tab === 'comments') { state.commentsUnread = 0; $('#comments-badge').textContent = ''; }
     if (t.dataset.tab === 'chat') { state.chatUnread = 0; $('#chat-badge').textContent = ''; }
   }));
 
@@ -736,7 +870,6 @@
   });
   $('#invite-close').addEventListener('click', () => $('#invite-modal').classList.add('hidden'));
 
-  /* Copy buttons (invite links, setup redirect URI, …). */
   document.addEventListener('click', async e => {
     const b = e.target.closest('[data-copy]');
     if (!b) return;
@@ -747,38 +880,116 @@
     setTimeout(() => { b.textContent = 'Copy'; }, 1500);
   });
 
-  /* ------------------------------ chat ------------------------------ */
+  /* --------------------- comments & private chat --------------------- */
 
-  function appendChat(m) {
-    const list = $('#chat-list');
+  function routeChat(m) {
+    if (m.scope === 'studio') appendStudioChat(m);
+    else appendComment(m);
+  }
+
+  function appendComment(m) {
+    const list = $('#comments-list');
     const div = document.createElement('div');
     div.className = `chat-msg from-${m.from}`;
     div.innerHTML = `<b>${U.escapeHtml(m.name)}</b><span>${U.escapeHtml(m.text)}</span><i>${U.fmtTime(m.ts)}</i>`;
-    div.title = 'Click to feature this message on the stream';
+    div.title = 'Click to feature this comment on the stream';
     div.onclick = () => {
       if (state.featured && state.featured.text === m.text && state.featured.name === m.name) {
         state.featured = null;
         div.classList.remove('featured');
       } else {
         state.featured = { name: m.name, text: m.text };
+        state.activeBanner = null;
+        renderBanners();
         $$('.chat-msg.featured').forEach(x => x.classList.remove('featured'));
         div.classList.add('featured');
       }
     };
     list.appendChild(div);
     list.scrollTop = list.scrollHeight;
-    if (!$('#tab-chat') || $('#tab-chat').classList.contains('hidden')) {
+    if ($('#tab-comments').classList.contains('hidden')) {
+      state.commentsUnread++;
+      $('#comments-badge').textContent = state.commentsUnread;
+    }
+  }
+
+  function appendStudioChat(m) {
+    const list = $('#chat-list');
+    const div = document.createElement('div');
+    div.className = `chat-msg from-${m.from}`;
+    div.innerHTML = `<b>${U.escapeHtml(m.name)}</b><span>${U.escapeHtml(m.text)}</span><i>${U.fmtTime(m.ts)}</i>`;
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+    if ($('#tab-chat').classList.contains('hidden')) {
       state.chatUnread++;
       $('#chat-badge').textContent = state.chatUnread;
     }
   }
 
+  $('#comments-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = $('#comments-input').value.trim();
+    if (!text) return;
+    signal.send({ type: 'chat', text, scope: 'public' });
+    $('#comments-input').value = '';
+  });
+
   $('#chat-form').addEventListener('submit', e => {
     e.preventDefault();
     const text = $('#chat-input').value.trim();
     if (!text) return;
-    signal.send({ type: 'chat', text });
+    signal.send({ type: 'chat', text, scope: 'studio' });
     $('#chat-input').value = '';
+  });
+
+  /* ------------------------------ banners ------------------------------ */
+
+  function saveBanners() { save(`lumio.banners.${roomId}`, banners); }
+
+  function renderBanners() {
+    const list = $('#banner-list');
+    list.innerHTML = '';
+    if (!banners.length) {
+      list.innerHTML = '<p class="dest-empty">No banners yet. Add one above — great for announcements, links and calls to action.</p>';
+    }
+    banners.forEach(b => {
+      const row = document.createElement('div');
+      const active = state.activeBanner && state.activeBanner.id === b.id;
+      row.className = 'banner' + (active ? ' active' : '');
+      row.innerHTML = `
+        <span class="banner-kind">${b.ticker ? '🔁' : '🏷'}</span>
+        <span class="banner-text">${U.escapeHtml(b.text)}</span>
+        <b class="banner-state">${active ? 'ON AIR' : ''}</b>
+        <button class="dest-del" data-del-banner="${b.id}" title="Delete">✕</button>`;
+      row.onclick = e => {
+        if (e.target.closest('[data-del-banner]')) return;
+        state.activeBanner = active ? null : b;
+        if (state.activeBanner) state.featured = null;
+        renderBanners();
+      };
+      list.appendChild(row);
+    });
+  }
+
+  $('#banner-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = $('#banner-text').value.trim();
+    if (!text) return;
+    banners.push({ id: Math.random().toString(36).slice(2, 10), text, ticker: $('#banner-ticker').checked });
+    saveBanners();
+    $('#banner-text').value = '';
+    $('#banner-ticker').checked = false;
+    renderBanners();
+  });
+
+  $('#banner-list').addEventListener('click', e => {
+    const del = e.target.closest('[data-del-banner]');
+    if (!del) return;
+    const id = del.dataset.delBanner;
+    banners = banners.filter(b => b.id !== id);
+    if (state.activeBanner && state.activeBanner.id === id) state.activeBanner = null;
+    saveBanners();
+    renderBanners();
   });
 
   /* ------------------------------ branding ------------------------------ */
@@ -790,291 +1001,72 @@
   $('#brand-show-names').checked = brand.showNames;
   $('#brand-mirror').checked = brand.mirror;
 
-  $('#brand-title').addEventListener('input', e => {
-    brand.title = e.target.value; saveBrand();
-    signal.send({ type: 'title', title: brand.title });
-  });
+  $('#brand-title').addEventListener('input', e => { brand.title = e.target.value; saveBrand(); });
   $('#brand-color').addEventListener('input', e => { brand.color = e.target.value; saveBrand(); });
   $('#brand-show-title').addEventListener('change', e => { brand.showTitle = e.target.checked; saveBrand(); });
   $('#brand-show-names').addEventListener('change', e => { brand.showNames = e.target.checked; saveBrand(); });
-  $('#brand-mirror').addEventListener('change', e => { brand.mirror = e.target.checked; saveBrand(); });
+  $('#brand-mirror').addEventListener('change', e => { brand.mirror = e.target.checked; saveBrand(); renderStrip(); });
 
-  /* ------------------------------ destinations ------------------------------ */
+  /* ------------------------- outputs (per-broadcast) ------------------------- */
 
-  function saveDests() { save(DEST_KEY, destinations); }
-
-  /* Which platforms already have server-side API credentials. The Connect
-   * buttons always work: configured platforms jump straight to the OAuth
-   * popup, unconfigured ones open the in-app setup wizard first. */
-  fetch('/api/config').then(r => r.json()).then(cfg => {
-    Object.assign(platformConfig, cfg);
-  }).catch(() => {});
-
-  /* Verify stored OAuth connections still exist on the server. */
-  destinations.filter(d => d.mode === 'oauth').forEach(d => {
-    fetch(`/api/connections/${d.connId}`).then(r => {
-      if (r.status === 404) { d.stale = true; renderDests(); }
-      else return r.json().then(info => {
-        if (info.connection) { // refresh display data (name, pages list)
-          d.name = info.connection.name;
-          d.avatar = info.connection.avatar;
-          d.liveEnabled = info.connection.liveEnabled !== false;
-          if (d.platform === 'facebook') d.targets = info.connection.targets;
-          saveDests(); renderDests();
-        }
-      });
-    }).catch(() => {});
-  });
-
-  /* ---- OAuth popup dance (the StreamYard-style "connect" flow) ---- */
-
-  function openAuthPopup(platform) {
-    const w = 560, h = 720;
-    const x = window.screenX + (window.outerWidth - w) / 2;
-    const y = window.screenY + (window.outerHeight - h) / 2;
-    window.open(`/auth/${platform}`, 'lumio-auth', `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
-  }
-
-  function connectClick(platform) {
-    if (platformConfig[platform]) openAuthPopup(platform);
-    else openSetup(platform);
-  }
-
-  $('#connect-youtube').addEventListener('click', () => connectClick('youtube'));
-  $('#connect-facebook').addEventListener('click', () => connectClick('facebook'));
-
-  /* ---- first-run setup wizard (server has no API credentials yet) ---- */
-
-  const SETUP = {
-    youtube: {
-      title: 'Set up the YouTube connection',
-      idLabel: 'OAuth client ID',
-      secretLabel: 'OAuth client secret',
-      steps: [
-        'Open <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> and create (or pick) a project.',
-        'APIs &amp; Services → <b>Enable APIs</b> → enable <b>YouTube Data API v3</b>.',
-        'OAuth consent screen → External → add yourself as a test user.',
-        'Credentials → <b>Create credentials → OAuth client ID → Web application</b>.',
-        'Add the <b>redirect URI below</b>, create, then copy the client ID &amp; secret here.',
-      ],
-    },
-    facebook: {
-      title: 'Set up the Facebook connection',
-      idLabel: 'App ID',
-      secretLabel: 'App secret',
-      steps: [
-        'Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Meta for Developers</a> → <b>Create app</b> (type: Business).',
-        'Add the <b>Facebook Login</b> product.',
-        'Facebook Login → Settings → add the <b>redirect URI below</b> to “Valid OAuth Redirect URIs”.',
-        'App settings → Basic → copy the <b>App ID</b> and <b>App secret</b> here.',
-        'While the app is in Development mode, add your account under App roles → Testers.',
-      ],
-    },
-  };
-
-  let setupPlatform = null;
-
-  function openSetup(platform) {
-    setupPlatform = platform;
-    const s = SETUP[platform];
-    $('#setup-title').textContent = s.title;
-    $('#setup-id-label').textContent = s.idLabel;
-    $('#setup-secret-label').textContent = s.secretLabel;
-    $('#setup-steps').innerHTML = s.steps.map(x => `<li>${x}</li>`).join('');
-    $('#setup-redirect').value = `${location.origin}/auth/${platform}/callback`;
-    $('#setup-client-id').value = '';
-    $('#setup-client-secret').value = '';
-    $('#setup-error').classList.add('hidden');
-    $('#setup-modal').classList.remove('hidden');
-  }
-
-  $('#setup-cancel').addEventListener('click', () => $('#setup-modal').classList.add('hidden'));
-
-  $('#setup-save').addEventListener('click', async () => {
-    const err = $('#setup-error');
-    err.classList.add('hidden');
-    $('#setup-save').disabled = true;
-    try {
-      const res = await fetch(`/api/setup/${setupPlatform}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId: $('#setup-client-id').value,
-          clientSecret: $('#setup-client-secret').value,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      platformConfig[setupPlatform] = true;
-      $('#setup-modal').classList.add('hidden');
-      logLine(`✓ ${PLATFORM_LABEL[setupPlatform]} API credentials saved — opening sign-in…`);
-      openAuthPopup(setupPlatform);
-    } catch (e) {
-      err.textContent = e.message;
-      err.classList.remove('hidden');
-    } finally {
-      $('#setup-save').disabled = false;
+  function destLabel(d) {
+    if (d.mode === 'oauth') {
+      const target = d.platform === 'facebook'
+        ? ` → ${((d.targets || []).find(t => t.id === d.targetId) || {}).name || 'profile'}` : '';
+      return `${PLATFORM_LABEL[d.platform]} · ${d.name}${target}`;
     }
-  });
-
-  window.addEventListener('message', ev => {
-    if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'lumio-auth') return;
-    if (ev.data.error) { logLine(`✗ ${ev.data.platform} connect failed: ${ev.data.error}`); return; }
-    const c = ev.data.connection;
-
-    // Reconnecting an account replaces its stale entry.
-    destinations = destinations.filter(d => !(d.mode === 'oauth' && d.platform === c.platform && d.name === c.name));
-
-    if (c.platform === 'youtube') {
-      destinations.push({
-        mode: 'oauth', platform: 'youtube', connId: c.id,
-        name: c.name, avatar: c.avatar, privacy: 'public',
-        liveEnabled: c.liveEnabled !== false, enabled: true,
-      });
-      if (c.liveEnabled === false) {
-        logLine('⚠ This channel does not have live streaming enabled yet — enable it in YouTube Studio (youtube.com/features). YouTube may take up to 24h to activate it.');
-      }
-    } else {
-      const profile = (c.targets || []).find(t => t.type === 'profile');
-      destinations.push({
-        mode: 'oauth', platform: 'facebook', connId: c.id,
-        name: c.name, avatar: c.avatar, targets: c.targets || [],
-        targetId: profile ? profile.id : (c.targets[0] && c.targets[0].id),
-        enabled: true,
-      });
-    }
-    saveDests();
-    renderDests();
-    logLine(`✓ Connected ${PLATFORM_LABEL[c.platform]}: ${c.name}`);
-  });
-
-  /* ---- rendering ---- */
-
-  function oauthRow(d, i) {
-    const row = document.createElement('div');
-    row.className = 'dest oauth' + (d.enabled && !d.stale ? ' enabled' : '');
-    const avatar = d.avatar
-      ? `<img class="dest-avatar" src="${U.escapeHtml(d.avatar)}" alt="" referrerpolicy="no-referrer" />`
-      : '<span class="dest-avatar fallback">●</span>';
-
-    let sub;
-    if (d.stale) {
-      sub = '<span class="dest-stale">Connection expired</span>';
-    } else if (d.platform === 'youtube') {
-      const warn = d.liveEnabled === false
-        ? '<span class="dest-stale">⚠ Enable live streaming in YouTube Studio first</span>'
-        : '';
-      sub = `${warn}<select class="dest-sub" data-privacy="${i}" title="YouTube privacy">
-               ${['public', 'unlisted', 'private'].map(p =>
-                 `<option value="${p}" ${d.privacy === p ? 'selected' : ''}>${p}</option>`).join('')}
-             </select>`;
-    } else {
-      sub = `<select class="dest-sub" data-target="${i}" title="Where to go live">
-               ${(d.targets || []).map(t =>
-                 `<option value="${U.escapeHtml(t.id)}" ${d.targetId === t.id ? 'selected' : ''}>${U.escapeHtml(t.name)}</option>`).join('')}
-             </select>`;
-    }
-
-    row.innerHTML = `
-      <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
-        <input type="checkbox" data-i="${i}" ${d.enabled ? 'checked' : ''} ${d.stale ? 'disabled' : ''}/><span></span>
-      </label>
-      ${avatar}
-      <div class="dest-info">
-        <b class="${d.platform}">${PLATFORM_LABEL[d.platform]} · ${U.escapeHtml(d.name)}</b>
-        ${sub}
-      </div>
-      ${d.stale ? `<button class="btn btn-primary btn-xs" data-reconnect="${d.platform}">Reconnect</button>` : ''}
-      <button class="dest-del" data-del="${i}" title="Disconnect">✕</button>`;
-    return row;
+    return `${PLATFORM_LABEL[d.platform]} (stream key)`;
   }
 
-  function keyRow(d, i) {
-    const row = document.createElement('div');
-    row.className = 'dest' + (d.enabled ? ' enabled' : '');
-    row.innerHTML = `
-      <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
-        <input type="checkbox" data-i="${i}" ${d.enabled ? 'checked' : ''}/><span></span>
-      </label>
-      <div class="dest-info">
-        <b class="${d.platform}">${PLATFORM_LABEL[d.platform]} <i class="dest-mode">stream key</i></b>
-        <span>${maskKey(d)}</span>
-      </div>
-      <button class="dest-del" data-del="${i}" title="Remove">✕</button>`;
-    return row;
-  }
-
-  function renderDests() {
+  function renderOutputs() {
     const list = $('#dest-list');
     list.innerHTML = '';
-    if (!destinations.length) {
-      list.innerHTML = '<p class="dest-empty">No platform destinations — your Lumio watch page still works. Connect YouTube or Facebook above to multistream.</p>';
+    const usable = allDests.filter(d => !d.stale);
+    if (!usable.length) {
+      list.innerHTML = '<p class="dest-empty">No destinations connected — the watch page still works. Connect platforms on the dashboard.</p>';
     }
-    destinations.forEach((d, i) => list.appendChild(d.mode === 'oauth' ? oauthRow(d, i) : keyRow(d, i)));
-    $('#stat-dest').textContent = destinations.filter(d => d.enabled && !d.stale).length;
+    usable.forEach(d => {
+      const on = selection.includes(d.id);
+      const row = document.createElement('div');
+      row.className = 'dest' + (on ? ' enabled' : '');
+      row.innerHTML = `
+        <label class="switch" title="${on ? 'Streaming here' : 'Off for this broadcast'}">
+          <input type="checkbox" data-sel="${d.id}" ${on ? 'checked' : ''}/><span></span>
+        </label>
+        <div class="dest-info">
+          <b class="${d.platform}">${U.escapeHtml(destLabel(d))}</b>
+          ${d.platform === 'youtube' && d.liveEnabled === false ? '<span class="dest-stale">⚠ Enable live streaming in YouTube Studio first</span>' : ''}
+        </div>`;
+      list.appendChild(row);
+    });
+    $('#stat-dest').textContent = selection.filter(id => usable.some(d => d.id === id)).length;
   }
-
-  function maskKey(d) {
-    const raw = d.platform === 'custom' ? d.value.replace(/^rtmps?:\/\//, '') : d.value;
-    return raw.length <= 8 ? '••••' : raw.slice(0, 4) + '••••' + raw.slice(-4);
-  }
-
-  $('#dest-add-btn').addEventListener('click', () => {
-    const platform = $('#dest-platform').value;
-    const value = $('#dest-key').value.trim();
-    if (!value) return;
-    if (platform === 'custom' && !RTMP_RE.test(value)) {
-      logLine('✗ Custom destination must be a full rtmp:// or rtmps:// URL.');
-      return;
-    }
-    destinations.push({ mode: 'key', platform, value, enabled: true });
-    saveDests();
-    $('#dest-key').value = '';
-    renderDests();
-  });
-
-  $('#dest-key').addEventListener('keydown', e => { if (e.key === 'Enter') $('#dest-add-btn').click(); });
-
-  $('#dest-list').addEventListener('click', e => {
-    const rec = e.target.closest('[data-reconnect]');
-    if (rec) { openAuthPopup(rec.dataset.reconnect); return; }
-    const del = e.target.closest('[data-del]');
-    if (del) {
-      const d = destinations[Number(del.dataset.del)];
-      if (d && d.mode === 'oauth' && !d.stale) {
-        fetch(`/api/connections/${d.connId}`, { method: 'DELETE' }).catch(() => {});
-      }
-      destinations.splice(Number(del.dataset.del), 1);
-      saveDests();
-      renderDests();
-    }
-  });
 
   $('#dest-list').addEventListener('change', e => {
-    const cb = e.target.closest('input[data-i]');
-    if (cb) {
-      destinations[Number(cb.dataset.i)].enabled = cb.checked;
-      saveDests(); renderDests();
-      return;
-    }
-    const priv = e.target.closest('select[data-privacy]');
-    if (priv) {
-      destinations[Number(priv.dataset.privacy)].privacy = priv.value;
-      saveDests();
-      return;
-    }
-    const tgt = e.target.closest('select[data-target]');
-    if (tgt) {
-      destinations[Number(tgt.dataset.target)].targetId = tgt.value;
-      saveDests();
-    }
+    const cb = e.target.closest('input[data-sel]');
+    if (!cb) return;
+    const id = cb.dataset.sel;
+    selection = cb.checked ? [...new Set([...selection, id])] : selection.filter(x => x !== id);
+    save(`lumio.sel.${roomId}`, selection);
+    renderOutputs();
   });
 
-  $('#dest-platform').addEventListener('change', e => {
-    $('#dest-key').placeholder = e.target.value === 'custom'
-      ? 'rtmp://server/app/streamkey' : 'Stream key';
-    $('#dest-key').type = e.target.value === 'custom' ? 'text' : 'password';
-  });
+  function destinationPayload() {
+    const title = state.roomTitle || 'Live broadcast';
+    return allDests
+      .filter(d => !d.stale && selection.includes(d.id))
+      .map(d => {
+        if (d.mode === 'oauth' && d.platform === 'youtube') {
+          return { kind: 'youtube', connId: d.connId, title, privacy: d.privacy || 'public' };
+        }
+        if (d.mode === 'oauth' && d.platform === 'facebook') {
+          return { kind: 'facebook', connId: d.connId, targetId: d.targetId, title, description: state.roomDesc };
+        }
+        const url = INGEST[d.platform](d.value);
+        return RTMP_RE.test(url) ? { kind: 'rtmp', url, label: d.platform } : null;
+      })
+      .filter(Boolean);
+  }
 
   /* ------------------------------ go live ------------------------------ */
 
@@ -1085,24 +1077,33 @@
     $('#btn-record').classList.toggle('rec-on', state.recordLocally);
   });
 
-  $('#btn-golive').addEventListener('click', () => (state.live ? stopLive() : startLive()));
+  $('#btn-golive').addEventListener('click', () => {
+    if (state.live) { stopLive(); return; }
+    // StreamYard-style confirmation listing where this will stream.
+    const dests = destinationPayload();
+    const ul = $('#golive-dests');
+    ul.innerHTML = `<li><b class="lumio-inline">Lumio watch page</b> — ${location.origin}/watch/${roomId}</li>`;
+    allDests.filter(d => !d.stale && selection.includes(d.id))
+      .forEach(d => ul.insertAdjacentHTML('beforeend', `<li>${U.escapeHtml(destLabel(d))}</li>`));
 
-  /** Serialize enabled destinations for the server. OAuth entries carry a
-   *  connection id — the server talks to YouTube/Facebook itself and never
-   *  sends tokens or generated stream keys to the browser. */
-  function destinationPayload() {
-    const title = brand.title || document.title.replace(/ — .*$/, '') || 'Live broadcast';
-    return destinations.filter(d => d.enabled && !d.stale).map(d => {
-      if (d.mode === 'oauth' && d.platform === 'youtube') {
-        return { kind: 'youtube', connId: d.connId, title, privacy: d.privacy || 'public' };
-      }
-      if (d.mode === 'oauth' && d.platform === 'facebook') {
-        return { kind: 'facebook', connId: d.connId, targetId: d.targetId, title, description: '' };
-      }
-      const url = INGEST[d.platform](d.value);
-      return RTMP_RE.test(url) ? { kind: 'rtmp', url, label: d.platform } : null;
-    }).filter(Boolean);
-  }
+    const warn = $('#golive-warn');
+    warn.classList.add('hidden');
+    if (!state.serverHasFfmpeg) {
+      warn.textContent = 'FFmpeg is missing on the server — going live will fail until it is installed.';
+      warn.classList.remove('hidden');
+    } else if (onStageParts().length === 0) {
+      warn.textContent = 'Your stage is empty — viewers will see an empty scene. Add yourself to the stage first.';
+      warn.classList.remove('hidden');
+    }
+    void dests; // payload built again on confirm
+    $('#golive-modal').classList.remove('hidden');
+  });
+
+  $('#golive-cancel').addEventListener('click', () => $('#golive-modal').classList.add('hidden'));
+  $('#golive-confirm').addEventListener('click', () => {
+    $('#golive-modal').classList.add('hidden');
+    startLive();
+  });
 
   function pickMime() {
     const prefs = [
@@ -1254,7 +1255,9 @@
 
   /* ------------------------------ boot ------------------------------ */
 
-  renderDests();
+  preflight();
+  renderOutputs();
+  renderBanners();
   populateDevices();
   navigator.mediaDevices.addEventListener?.('devicechange', populateDevices);
 })();

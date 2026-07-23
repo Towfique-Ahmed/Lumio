@@ -39,10 +39,8 @@
     <section class="home-cards">
       <div class="home-card">
         <h3>🎬 Host a broadcast</h3>
-        <p>Create a studio, invite guests backstage, put them on stage, go live everywhere at once.</p>
-        <input id="create-title" type="text" maxlength="120" placeholder="Broadcast title (optional)" />
-        <button id="create-btn" class="btn btn-primary btn-lg">Create broadcast →</button>
-        <p id="create-error" class="gate-error hidden"></p>
+        <p>Connect your YouTube &amp; Facebook once, create a broadcast, bring guests on stage and go live everywhere at once.</p>
+        <a class="btn btn-primary btn-lg" href="/dashboard">Open your dashboard →</a>
       </div>
 
       <div class="home-card">
@@ -74,26 +72,6 @@
     (() => {
       'use strict';
       const $ = s => document.querySelector(s);
-
-      $('#create-btn').addEventListener('click', async () => {
-        const err = $('#create-error');
-        err.classList.add('hidden');
-        $('#create-btn').disabled = true;
-        try {
-          const res = await fetch('/api/rooms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: $('#create-title').value.trim() }),
-          });
-          const room = await res.json();
-          localStorage.setItem(`lumio.hostkey.${room.id}`, room.hostKey);
-          location.href = `/studio/${room.id}`;
-        } catch {
-          err.textContent = 'Could not create a broadcast — is the server running?';
-          err.classList.remove('hidden');
-          $('#create-btn').disabled = false;
-        }
-      });
 
       const extractId = raw => {
         const m = String(raw).match(/[a-z0-9]{10}/);

@@ -73,14 +73,24 @@
 
     <aside class="sidebar">
       <nav class="tabs">
-        <button class="tab on" data-tab="chat">Chat <b id="chat-badge"></b></button>
-        <button class="tab" data-tab="people">People <b id="people-count"></b></button>
+        <button class="tab on" data-tab="comments">💬 <span>Comments</span> <b id="comments-badge"></b></button>
+        <button class="tab" data-tab="chat">🔒 <span>Chat</span> <b id="chat-badge"></b></button>
+        <button class="tab" data-tab="people">👥 <span>People</span> <b id="people-count"></b></button>
       </nav>
 
-      <section class="tab-panel" id="tab-chat">
+      <section class="tab-panel chatty" id="tab-comments">
+        <div id="comments-list" class="chat-list"></div>
+        <form id="comments-form" class="chat-form">
+          <input id="comments-input" type="text" maxlength="500" placeholder="Message the audience…" autocomplete="off" />
+          <button class="btn btn-primary btn-sm" type="submit">Send</button>
+        </form>
+      </section>
+
+      <section class="tab-panel chatty hidden" id="tab-chat">
+        <p class="panel-hint">🔒 Only the host and guests see this — never the audience.</p>
         <div id="chat-list" class="chat-list"></div>
         <form id="chat-form" class="chat-form">
-          <input id="chat-input" type="text" maxlength="500" placeholder="Message the studio &amp; audience…" autocomplete="off" />
+          <input id="chat-input" type="text" maxlength="500" placeholder="Message the studio privately…" autocomplete="off" />
           <button class="btn btn-primary btn-sm" type="submit">Send</button>
         </form>
       </section>
