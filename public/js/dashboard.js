@@ -37,7 +37,19 @@
   function saveDests() { save(DEST_KEY, destinations); }
 
   const platformConfig = { youtube: false, facebook: false };
-  fetch('/api/config').then(r => r.json()).then(cfg => Object.assign(platformConfig, cfg)).catch(() => {});
+  fetch('/api/config').then(r => r.json()).then(cfg => {
+    Object.assign(platformConfig, cfg);
+    // Show the exact callback URLs this server sends — the #1 cause of
+    // redirect_uri_mismatch is these not matching the console registration.
+    if (cfg.redirectUris) {
+      $('#ruri-youtube').value = cfg.redirectUris.youtube;
+      $('#ruri-facebook').value = cfg.redirectUris.facebook;
+    } else {
+      // Old server without redirectUris support — derive from the page origin.
+      $('#ruri-youtube').value = `${location.origin}/auth/youtube/callback`;
+      $('#ruri-facebook').value = `${location.origin}/auth/facebook/callback`;
+    }
+  }).catch(() => {});
 
   /* Refresh stored OAuth connections against the server. */
   destinations.filter(d => d.mode === 'oauth').forEach(d => {
