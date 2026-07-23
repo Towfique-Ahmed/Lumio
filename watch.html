@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Webinar — Lumio</title>
+  <meta name="description" content="Join this live webinar, powered by Lumio." />
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="watch-body">
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a class="brand" href="index.html">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" fill="url(#lg2)"/>
+          <polygon points="13,10 23,16 13,22" fill="#fff"/>
+          <defs>
+            <linearGradient id="lg2" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0" stop-color="#7c3aed"/>
+              <stop offset="1" stop-color="#ec4899"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>Lumio</span>
+      </a>
+      <div class="watch-nav-right">
+        <span id="status-badge" class="status-badge upcoming">UPCOMING</span>
+        <button class="btn btn-ghost btn-sm" id="watch-copy">🔗 Copy link</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="watch-main container">
+    <!-- Error state -->
+    <div id="watch-error" class="empty-state hidden">
+      <div class="empty-icon">🤔</div>
+      <h3>Webinar not found</h3>
+      <p>This link seems incomplete or broken. Ask the organizer for a fresh one.</p>
+      <a class="btn btn-primary" href="index.html">Go to Lumio home</a>
+    </div>
+
+    <!-- Lobby / countdown -->
+    <section id="lobby" class="lobby hidden">
+      <p class="lobby-kicker" id="lobby-platform">STARTING SOON</p>
+      <h1 id="lobby-title" class="lobby-title"></h1>
+      <p id="lobby-when" class="lobby-when"></p>
+      <div class="countdown" id="countdown">
+        <div class="cd-cell"><span id="cd-days">0</span><label>Days</label></div>
+        <div class="cd-cell"><span id="cd-hours">00</span><label>Hours</label></div>
+        <div class="cd-cell"><span id="cd-mins">00</span><label>Minutes</label></div>
+        <div class="cd-cell"><span id="cd-secs">00</span><label>Seconds</label></div>
+      </div>
+      <p class="lobby-hint">This page will switch to the live stream automatically.</p>
+      <button class="btn btn-ghost" id="lobby-skip">I know it's live — show the player now</button>
+    </section>
+
+    <!-- Live room -->
+    <section id="room" class="room hidden">
+      <div class="room-grid" id="room-grid">
+        <div class="player-col">
+          <div class="player-frame" id="player-frame"></div>
+          <div class="room-meta">
+            <h1 id="room-title"></h1>
+            <div class="room-sub">
+              <span id="room-platform" class="platform-chip"></span>
+              <span id="room-when"></span>
+              <span id="room-host"></span>
+            </div>
+            <div id="room-speakers" class="room-speakers hidden"></div>
+            <div id="room-desc" class="room-desc hidden"></div>
+            <div id="fb-chat-note" class="fb-chat-note hidden">
+              💬 The conversation for this stream happens on Facebook —
+              <a id="fb-chat-link" href="#" target="_blank" rel="noopener">open comments in a new tab →</a>
+            </div>
+          </div>
+        </div>
+        <aside class="chat-col" id="chat-col">
+          <div class="chat-head">Live chat</div>
+          <div class="chat-frame" id="chat-frame"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Ended state -->
+    <section id="ended" class="lobby hidden">
+      <p class="lobby-kicker">THANKS FOR JOINING</p>
+      <h1 id="ended-title" class="lobby-title"></h1>
+      <p class="lobby-hint">This webinar has ended. The replay (if available) is playable below.</p>
+      <div class="player-frame replay-frame" id="replay-frame"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>Powered by <a href="index.html"><b>Lumio</b></a> — free webinar pages for YouTube &amp; Facebook Live.</span>
+    </div>
+  </footer>
+
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/watch.js"></script>
+</body>
+</html>
