@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumio — Host Webinars &amp; Live Streams from YouTube and Facebook</title>
+  <meta name="description" content="Lumio lets you turn any YouTube or Facebook live stream into a branded webinar page with countdown, live chat and a shareable link." />
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <!-- ============ NAVBAR ============ -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a class="brand" href="index.html">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" fill="url(#lg)"/>
+          <polygon points="13,10 23,16 13,22" fill="#fff"/>
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0" stop-color="#7c3aed"/>
+              <stop offset="1" stop-color="#ec4899"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>Lumio</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#dashboard">My webinars</a>
+      </nav>
+      <button class="btn btn-primary" data-open-create>+ New Webinar</button>
+    </div>
+  </header>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="container hero-inner">
+      <div class="hero-copy">
+        <span class="badge-pill">🔴 YouTube Live &nbsp;•&nbsp; Facebook Live</span>
+        <h1>Turn any live stream into a <span class="grad-text">professional webinar</span></h1>
+        <p class="lead">
+          Paste your YouTube or Facebook live stream link and Lumio gives you a branded
+          webinar room — with countdown timer, live chat, speaker info and one shareable
+          link for your audience. No downloads, no accounts, no cost.
+        </p>
+        <div class="hero-actions">
+          <button class="btn btn-primary btn-lg" data-open-create>Create your webinar</button>
+          <a class="btn btn-ghost btn-lg" href="#how-it-works">See how it works</a>
+        </div>
+        <div class="hero-stats">
+          <div><strong>2</strong><span>Platforms supported</span></div>
+          <div><strong>0s</strong><span>Setup friction</span></div>
+          <div><strong>∞</strong><span>Viewers, free forever</span></div>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="mock-player">
+          <div class="mock-player-top">
+            <span class="live-dot"></span> LIVE
+            <span class="mock-viewers">👁 1,248 watching</span>
+          </div>
+          <div class="mock-player-screen">
+            <svg viewBox="0 0 24 24" width="54" height="54"><path fill="#fff" d="M8 5v14l11-7z"/></svg>
+          </div>
+          <div class="mock-chat">
+            <div class="mock-msg"><b>Ayesha</b> This session is 🔥</div>
+            <div class="mock-msg"><b>Daniel</b> Can you share the slides?</div>
+            <div class="mock-msg"><b>Mina</b> Greetings from Berlin 👋</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section class="section" id="features">
+    <div class="container">
+      <h2 class="section-title">Everything a webinar page needs</h2>
+      <p class="section-sub">Built on the official YouTube IFrame and Facebook Video Player embeds.</p>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <div class="feature-icon">▶️</div>
+          <h3>YouTube &amp; Facebook Live</h3>
+          <p>Works with YouTube videos, live streams, channel “always-live” links and any public Facebook Live video or fb.watch link.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⏳</div>
+          <h3>Countdown lobby</h3>
+          <p>Schedule your webinar and attendees who arrive early see a live countdown that flips to the stream automatically at start time.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">💬</div>
+          <h3>Live chat</h3>
+          <p>YouTube live chat is embedded right beside the player. Facebook events link viewers to the conversation on Facebook.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔗</div>
+          <h3>One shareable link</h3>
+          <p>Every webinar gets a self-contained link that carries the whole event — send it by email, Slack or socials.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎤</div>
+          <h3>Speaker spotlight</h3>
+          <p>Add the host and speaker names, an agenda and a description so your page looks like an event, not just a video.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Private by design</h3>
+          <p>Everything is stored in your browser. No servers, no tracking, no sign-up. Your data never leaves your device.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section class="section section-alt" id="how-it-works">
+    <div class="container">
+      <h2 class="section-title">Live in three steps</h2>
+      <div class="steps">
+        <div class="step">
+          <span class="step-num">1</span>
+          <h3>Go live on your platform</h3>
+          <p>Start a live stream on YouTube (via YouTube Studio) or Facebook (via Live Producer) as you normally would, and copy its URL.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">2</span>
+          <h3>Create your webinar</h3>
+          <p>Paste the link into Lumio, add a title, schedule, speakers and description. Lumio detects the platform automatically.</p>
+        </div>
+        <div class="step">
+          <span class="step-num">3</span>
+          <h3>Share the link</h3>
+          <p>Send the generated webinar link to your audience. They get a countdown, then the live player and chat — on any device.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section class="section" id="dashboard">
+    <div class="container">
+      <div class="dash-head">
+        <div>
+          <h2 class="section-title left">My webinars</h2>
+          <p class="section-sub left">Saved locally in this browser.</p>
+        </div>
+        <button class="btn btn-primary" data-open-create>+ New Webinar</button>
+      </div>
+      <div id="webinar-list" class="webinar-grid"></div>
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">📡</div>
+        <h3>No webinars yet</h3>
+        <p>Create your first webinar and it will show up here.</p>
+        <button class="btn btn-primary" data-open-create>Create a webinar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREATE / EDIT MODAL ============ -->
+  <div class="modal-backdrop hidden" id="create-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <h3 id="modal-title">Create a webinar</h3>
+        <button class="modal-close" data-close-create aria-label="Close">&times;</button>
+      </div>
+      <form id="webinar-form" novalidate>
+        <input type="hidden" id="f-id" />
+
+        <label class="field">
+          <span>Stream URL <em>*</em></span>
+          <input type="url" id="f-url" placeholder="https://www.youtube.com/watch?v=… or https://www.facebook.com/…/videos/…" required />
+          <small id="url-feedback" class="url-feedback"></small>
+        </label>
+
+        <label class="field">
+          <span>Webinar title <em>*</em></span>
+          <input type="text" id="f-title" maxlength="120" placeholder="e.g. Scaling WordPress to 1M visits — Live Q&A" required />
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Date &amp; time <em>*</em></span>
+            <input type="datetime-local" id="f-datetime" required />
+          </label>
+          <label class="field">
+            <span>Duration (minutes)</span>
+            <input type="number" id="f-duration" min="5" max="600" step="5" value="60" />
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Host / organizer</span>
+            <input type="text" id="f-host" maxlength="80" placeholder="e.g. WPDeveloper" />
+          </label>
+          <label class="field">
+            <span>Speaker(s)</span>
+            <input type="text" id="f-speakers" maxlength="120" placeholder="e.g. Towfique Ahmed, Jane Doe" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Description / agenda</span>
+          <textarea id="f-desc" rows="3" maxlength="1000" placeholder="What will attendees learn? One bullet per line works great."></textarea>
+        </label>
+
+        <div class="field-row checkboxes">
+          <label class="check"><input type="checkbox" id="f-chat" checked /> <span>Show live chat (YouTube)</span></label>
+          <label class="check"><input type="checkbox" id="f-autoplay" checked /> <span>Autoplay when live</span></label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-create>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="f-submit">Create webinar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ SHARE MODAL ============ -->
+  <div class="modal-backdrop hidden" id="share-modal">
+    <div class="modal modal-sm" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3>🎉 Your webinar is ready</h3>
+        <button class="modal-close" data-close-share aria-label="Close">&times;</button>
+      </div>
+      <p class="share-hint">Share this link with your audience — it contains the whole event:</p>
+      <div class="share-row">
+        <input type="text" id="share-link" readonly />
+        <button class="btn btn-primary" id="copy-link">Copy</button>
+      </div>
+      <div class="share-actions">
+        <a class="btn btn-ghost" id="share-open" href="#" target="_blank" rel="noopener">Open webinar page →</a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>© 2026 Lumio — webinars powered by YouTube Live &amp; Facebook Live embeds.</span>
+      <span>Runs 100% in your browser.</span>
+    </div>
+  </footer>
+
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
