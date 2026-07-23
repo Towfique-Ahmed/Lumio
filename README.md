@@ -52,7 +52,12 @@ Sources:
 [On-Air webinars](https://support.streamyard.com/hc/en-us/articles/10920795244308-Create-a-Webinar-with-StreamYard-On-Air),
 [watching on StreamYard](https://support.streamyard.com/hc/en-us/articles/360043298792-Can-people-watch-on-StreamYard),
 [WebRTC SFU architectures](https://getstream.io/resources/projects/webrtc/architectures/sfu/),
-[WebRTC live-streaming app comparison](https://www.hirevoipdeveloper.com/blog/live-streaming-apps-using-webrtc/).
+[WebRTC live-streaming app comparison](https://www.hirevoipdeveloper.com/blog/live-streaming-apps-using-webrtc/),
+[YouTube Live Streaming API — life of a broadcast](https://developers.google.com/youtube/v3/live/life-of-a-broadcast),
+[liveBroadcasts.insert](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/insert),
+[liveBroadcasts.bind](https://developers.google.com/youtube/v3/live/docs/liveBroadcasts/bind),
+[Meta Live Video API](https://developers.facebook.com/docs/live-video-api/),
+[Page live_videos](https://developers.facebook.com/docs/graph-api/reference/page/live_videos/).
 
 Lumio mirrors this architecture at self-hosted scale: a **WebRTC mesh**
 replaces StreamYard's SFU for the studio (great up to ~6–10 people), the
@@ -109,6 +114,51 @@ npm start                      # → http://localhost:3000
 > TLS (Caddy, nginx + Let's Encrypt, or a platform that terminates TLS).
 > WebSockets automatically upgrade to `wss://` on HTTPS pages.
 
+## 🔌 One-click destinations (the StreamYard "connect" flow)
+
+Just like StreamYard, Lumio can connect platform accounts **through OAuth** so
+hosts never touch a stream key:
+
+- **Connect YouTube** → Google sign-in popup → pick the channel → done. When
+  you press *Go Live*, Lumio calls the **YouTube Live Streaming API**
+  (`liveBroadcasts.insert` + `liveStreams.insert` + `liveBroadcasts.bind`,
+  with `enableAutoStart`/`enableAutoStop`) to create the broadcast, fetch the
+  RTMPS ingest and start it automatically — the studio log shows the watch
+  URL. Privacy (public/unlisted/private) is picked per destination.
+- **Connect Facebook** → Facebook Login popup → choose **Profile or Page**
+  from a dropdown (like StreamYard's picker). On *Go Live*, Lumio calls the
+  **Graph API** (`POST /{target}/live_videos`, `status=LIVE_NOW`) and pushes to
+  the returned `secure_stream_url`; the live video is ended via
+  `end_live_video` when you stop. *Groups are not offered because Meta removed
+  the Groups API in April 2024 (StreamYard dropped it too) — use a persistent
+  stream key for groups instead.*
+
+OAuth **tokens never reach the browser** — they're stored on your server in
+`.data/connections.json` (mode 600); the studio only holds an opaque
+connection id plus the display name/avatar. Google tokens auto-refresh;
+Facebook user tokens are exchanged for long-lived (~60-day) tokens.
+
+### Enabling it
+
+Copy `.env.example` to `.env` and fill in:
+
+1. **Google**: [Google Cloud Console](https://console.cloud.google.com/) →
+   new project → enable **YouTube Data API v3** → OAuth consent screen →
+   Web OAuth client with redirect URI `https://your-domain/auth/youtube/callback`
+   → set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+   (The connected channel must have live streaming enabled in YouTube Studio.)
+2. **Meta**: [Meta for Developers](https://developers.facebook.com/) → create
+   app → add **Facebook Login** → redirect URI
+   `https://your-domain/auth/facebook/callback` → set `FACEBOOK_APP_ID` /
+   `FACEBOOK_APP_SECRET`. In development the app's testers can go live
+   immediately; public use of `publish_video` / pages permissions requires
+   Meta App Review.
+3. Set `PUBLIC_URL` to the exact HTTPS origin you registered.
+
+No credentials? The Destinations tab automatically falls back to
+**manual stream-key entry** (YouTube / Facebook / custom RTMP), which needs no
+setup at all.
+
 ## 📡 Hosting a broadcast
 
 1. **Create** — on the home page, give your broadcast a title and hit
@@ -119,8 +169,9 @@ npm start                      # → http://localhost:3000
    - **Watch link** (`/watch/<id>`) — for the audience.
 3. **Stage your guests** — guests appear in the backstage strip and the
    People tab. Click *Add to stage* when you're ready for them.
-4. **Destinations** (optional) — add YouTube / Facebook stream keys or a custom
-   RTMP URL. Skip this entirely for a watch-page-only webinar.
+4. **Destinations** (optional) — click **Connect YouTube** / **Connect
+   Facebook** (OAuth, see above) or paste stream keys / a custom RTMP URL.
+   Skip this entirely for a watch-page-only webinar.
 5. **Go Live** — the canvas preview *is* the program your audience sees.
    Viewers on the watch page connect automatically; platform streams start on
    the platform side (YouTube auto-detects; Facebook asks you to confirm).
@@ -153,7 +204,9 @@ never join the mesh, which is exactly how "unlimited viewers" stays cheap.
 ## 📁 Project structure
 
 ```
-├── server.js                  # Express + WS: rooms, signaling, chat, FFmpeg relay (HLS+RTMP)
+├── server.js                  # Express + WS: rooms, signaling, chat, OAuth routes, FFmpeg relay (HLS+RTMP)
+├── lib/platforms.js           # YouTube Live Streaming API + Facebook Live Video API + token store
+├── .env.example               # PUBLIC_URL + Google/Meta API credentials template
 ├── package.json
 └── public/
     ├── index.html             # Landing: create / join / watch

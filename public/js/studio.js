@@ -12,7 +12,8 @@
   const U = window.LumioUtil;
 
   const W = 1280, H = 720, FPS = 30;
-  const DEST_KEY = 'lumio.destinations.v1';
+  const DEST_KEY = 'lumio.destinations.v2';
+  const DEST_KEY_V1 = 'lumio.destinations.v1';
   const BRAND_KEY = 'lumio.brand.v2';
   const NAME_KEY = 'lumio.name';
 
@@ -68,7 +69,12 @@
     title: '', color: '#7c3aed', showTitle: false, showNames: true, mirror: false,
   }, load(BRAND_KEY));
 
-  let destinations = load(DEST_KEY) || [];
+  /* Destination entries:
+   *   { mode:'oauth', platform:'youtube',  connId, name, avatar, privacy, enabled, stale? }
+   *   { mode:'oauth', platform:'facebook', connId, name, avatar, targets:[{type,id,name}], targetId, enabled, stale? }
+   *   { mode:'key',   platform:'youtube'|'facebook'|'custom', value, enabled }   */
+  let destinations = load(DEST_KEY) || (load(DEST_KEY_V1) || []).map(d => ({ mode: 'key', ...d }));
+  const platformConfig = { youtube: false, facebook: false };
 
   /** peerId -> participant
    *  { peerId, name, role, onStage, camStream, screenStream,
@@ -790,27 +796,133 @@
 
   /* ------------------------------ destinations ------------------------------ */
 
+  function saveDests() { save(DEST_KEY, destinations); }
+
+  /* Which platforms can be connected with one click (server-side API creds). */
+  fetch('/api/config').then(r => r.json()).then(cfg => {
+    Object.assign(platformConfig, cfg);
+    $('#connect-youtube').classList.toggle('hidden', !cfg.youtube);
+    $('#connect-facebook').classList.toggle('hidden', !cfg.facebook);
+    $('#connect-hint').classList.toggle('hidden', !(cfg.youtube || cfg.facebook));
+    $('#connect-unconfigured').classList.toggle('hidden', !!(cfg.youtube && cfg.facebook));
+    if (!cfg.youtube && !cfg.facebook) $('#manual-add').open = true;
+  }).catch(() => { $('#connect-unconfigured').classList.remove('hidden'); });
+
+  /* Verify stored OAuth connections still exist on the server. */
+  destinations.filter(d => d.mode === 'oauth').forEach(d => {
+    fetch(`/api/connections/${d.connId}`).then(r => {
+      if (r.status === 404) { d.stale = true; renderDests(); }
+      else return r.json().then(info => {
+        if (info.connection) { // refresh display data (name, pages list)
+          d.name = info.connection.name;
+          d.avatar = info.connection.avatar;
+          if (d.platform === 'facebook') d.targets = info.connection.targets;
+          saveDests(); renderDests();
+        }
+      });
+    }).catch(() => {});
+  });
+
+  /* ---- OAuth popup dance (the StreamYard-style "connect" flow) ---- */
+
+  function openAuthPopup(platform) {
+    const w = 560, h = 720;
+    const x = window.screenX + (window.outerWidth - w) / 2;
+    const y = window.screenY + (window.outerHeight - h) / 2;
+    window.open(`/auth/${platform}`, 'lumio-auth', `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
+  }
+
+  $('#connect-youtube').addEventListener('click', () => openAuthPopup('youtube'));
+  $('#connect-facebook').addEventListener('click', () => openAuthPopup('facebook'));
+
+  window.addEventListener('message', ev => {
+    if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'lumio-auth') return;
+    if (ev.data.error) { logLine(`✗ ${ev.data.platform} connect failed: ${ev.data.error}`); return; }
+    const c = ev.data.connection;
+
+    // Reconnecting an account replaces its stale entry.
+    destinations = destinations.filter(d => !(d.mode === 'oauth' && d.platform === c.platform && d.name === c.name));
+
+    if (c.platform === 'youtube') {
+      destinations.push({
+        mode: 'oauth', platform: 'youtube', connId: c.id,
+        name: c.name, avatar: c.avatar, privacy: 'public', enabled: true,
+      });
+    } else {
+      const profile = (c.targets || []).find(t => t.type === 'profile');
+      destinations.push({
+        mode: 'oauth', platform: 'facebook', connId: c.id,
+        name: c.name, avatar: c.avatar, targets: c.targets || [],
+        targetId: profile ? profile.id : (c.targets[0] && c.targets[0].id),
+        enabled: true,
+      });
+    }
+    saveDests();
+    renderDests();
+    logLine(`✓ Connected ${PLATFORM_LABEL[c.platform]}: ${c.name}`);
+  });
+
+  /* ---- rendering ---- */
+
+  function oauthRow(d, i) {
+    const row = document.createElement('div');
+    row.className = 'dest oauth' + (d.enabled && !d.stale ? ' enabled' : '');
+    const avatar = d.avatar
+      ? `<img class="dest-avatar" src="${U.escapeHtml(d.avatar)}" alt="" referrerpolicy="no-referrer" />`
+      : '<span class="dest-avatar fallback">●</span>';
+
+    let sub;
+    if (d.stale) {
+      sub = '<span class="dest-stale">Connection expired</span>';
+    } else if (d.platform === 'youtube') {
+      sub = `<select class="dest-sub" data-privacy="${i}" title="YouTube privacy">
+               ${['public', 'unlisted', 'private'].map(p =>
+                 `<option value="${p}" ${d.privacy === p ? 'selected' : ''}>${p}</option>`).join('')}
+             </select>`;
+    } else {
+      sub = `<select class="dest-sub" data-target="${i}" title="Where to go live">
+               ${(d.targets || []).map(t =>
+                 `<option value="${U.escapeHtml(t.id)}" ${d.targetId === t.id ? 'selected' : ''}>${U.escapeHtml(t.name)}</option>`).join('')}
+             </select>`;
+    }
+
+    row.innerHTML = `
+      <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
+        <input type="checkbox" data-i="${i}" ${d.enabled ? 'checked' : ''} ${d.stale ? 'disabled' : ''}/><span></span>
+      </label>
+      ${avatar}
+      <div class="dest-info">
+        <b class="${d.platform}">${PLATFORM_LABEL[d.platform]} · ${U.escapeHtml(d.name)}</b>
+        ${sub}
+      </div>
+      ${d.stale ? `<button class="btn btn-primary btn-xs" data-reconnect="${d.platform}">Reconnect</button>` : ''}
+      <button class="dest-del" data-del="${i}" title="Disconnect">✕</button>`;
+    return row;
+  }
+
+  function keyRow(d, i) {
+    const row = document.createElement('div');
+    row.className = 'dest' + (d.enabled ? ' enabled' : '');
+    row.innerHTML = `
+      <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
+        <input type="checkbox" data-i="${i}" ${d.enabled ? 'checked' : ''}/><span></span>
+      </label>
+      <div class="dest-info">
+        <b class="${d.platform}">${PLATFORM_LABEL[d.platform]} <i class="dest-mode">stream key</i></b>
+        <span>${maskKey(d)}</span>
+      </div>
+      <button class="dest-del" data-del="${i}" title="Remove">✕</button>`;
+    return row;
+  }
+
   function renderDests() {
     const list = $('#dest-list');
     list.innerHTML = '';
     if (!destinations.length) {
-      list.innerHTML = '<p class="dest-empty">No RTMP destinations — your Lumio watch page still works. Add YouTube, Facebook or custom RTMP to multistream.</p>';
+      list.innerHTML = '<p class="dest-empty">No platform destinations — your Lumio watch page still works. Connect YouTube or Facebook above to multistream.</p>';
     }
-    destinations.forEach((d, i) => {
-      const row = document.createElement('div');
-      row.className = 'dest' + (d.enabled ? ' enabled' : '');
-      row.innerHTML = `
-        <label class="switch" title="${d.enabled ? 'Enabled' : 'Disabled'}">
-          <input type="checkbox" data-i="${i}" ${d.enabled ? 'checked' : ''}/><span></span>
-        </label>
-        <div class="dest-info">
-          <b class="${d.platform}">${PLATFORM_LABEL[d.platform]}</b>
-          <span>${maskKey(d)}</span>
-        </div>
-        <button class="dest-del" data-del="${i}" title="Remove">✕</button>`;
-      list.appendChild(row);
-    });
-    $('#stat-dest').textContent = destinations.filter(d => d.enabled).length;
+    destinations.forEach((d, i) => list.appendChild(d.mode === 'oauth' ? oauthRow(d, i) : keyRow(d, i)));
+    $('#stat-dest').textContent = destinations.filter(d => d.enabled && !d.stale).length;
   }
 
   function maskKey(d) {
@@ -826,8 +938,8 @@
       logLine('✗ Custom destination must be a full rtmp:// or rtmps:// URL.');
       return;
     }
-    destinations.push({ platform, value, enabled: true });
-    save(DEST_KEY, destinations);
+    destinations.push({ mode: 'key', platform, value, enabled: true });
+    saveDests();
     $('#dest-key').value = '';
     renderDests();
   });
@@ -835,19 +947,37 @@
   $('#dest-key').addEventListener('keydown', e => { if (e.key === 'Enter') $('#dest-add-btn').click(); });
 
   $('#dest-list').addEventListener('click', e => {
+    const rec = e.target.closest('[data-reconnect]');
+    if (rec) { openAuthPopup(rec.dataset.reconnect); return; }
     const del = e.target.closest('[data-del]');
     if (del) {
+      const d = destinations[Number(del.dataset.del)];
+      if (d && d.mode === 'oauth' && !d.stale) {
+        fetch(`/api/connections/${d.connId}`, { method: 'DELETE' }).catch(() => {});
+      }
       destinations.splice(Number(del.dataset.del), 1);
-      save(DEST_KEY, destinations);
+      saveDests();
       renderDests();
     }
   });
+
   $('#dest-list').addEventListener('change', e => {
     const cb = e.target.closest('input[data-i]');
     if (cb) {
       destinations[Number(cb.dataset.i)].enabled = cb.checked;
-      save(DEST_KEY, destinations);
-      renderDests();
+      saveDests(); renderDests();
+      return;
+    }
+    const priv = e.target.closest('select[data-privacy]');
+    if (priv) {
+      destinations[Number(priv.dataset.privacy)].privacy = priv.value;
+      saveDests();
+      return;
+    }
+    const tgt = e.target.closest('select[data-target]');
+    if (tgt) {
+      destinations[Number(tgt.dataset.target)].targetId = tgt.value;
+      saveDests();
     }
   });
 
@@ -868,10 +998,21 @@
 
   $('#btn-golive').addEventListener('click', () => (state.live ? stopLive() : startLive()));
 
-  function activeUrls() {
-    return destinations.filter(d => d.enabled)
-      .map(d => INGEST[d.platform](d.value))
-      .filter(u => RTMP_RE.test(u));
+  /** Serialize enabled destinations for the server. OAuth entries carry a
+   *  connection id — the server talks to YouTube/Facebook itself and never
+   *  sends tokens or generated stream keys to the browser. */
+  function destinationPayload() {
+    const title = brand.title || document.title.replace(/ — .*$/, '') || 'Live broadcast';
+    return destinations.filter(d => d.enabled && !d.stale).map(d => {
+      if (d.mode === 'oauth' && d.platform === 'youtube') {
+        return { kind: 'youtube', connId: d.connId, title, privacy: d.privacy || 'public' };
+      }
+      if (d.mode === 'oauth' && d.platform === 'facebook') {
+        return { kind: 'facebook', connId: d.connId, targetId: d.targetId, title, description: '' };
+      }
+      const url = INGEST[d.platform](d.value);
+      return RTMP_RE.test(url) ? { kind: 'rtmp', url, label: d.platform } : null;
+    }).filter(Boolean);
   }
 
   function pickMime() {
@@ -895,7 +1036,7 @@
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type: 'start', room: roomId, hostKey,
-        destinations: activeUrls(), width: W, height: H, fps: FPS,
+        destinations: destinationPayload(), width: W, height: H, fps: FPS,
       }));
     };
 
@@ -906,7 +1047,15 @@
         state.live = true;
         state.liveStart = Date.now();
         setLiveUi('live');
-        logLine(`● LIVE — watch page + ${msg.destinations} RTMP destination(s).`);
+        logLine(`● LIVE — watch page + ${msg.destinations} platform destination(s).`);
+        (msg.outputs || []).forEach(o => {
+          if (o.watchUrl) logLine(`  ↳ ${o.platform}${o.label ? ` (${o.label})` : ''}: ${o.watchUrl}`);
+        });
+        (msg.failures || []).forEach(f => logLine(`  ✗ ${f.label} failed: ${f.error}`));
+        if (msg.failures && msg.failures.length) {
+          const tab = $$('.tab').find(t => t.dataset.tab === 'log');
+          if (tab) tab.click();
+        }
       } else if (msg.type === 'log') {
         logLine(msg.message);
       } else if (msg.type === 'error') {

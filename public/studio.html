@@ -129,22 +129,32 @@
             <span>Unlimited viewers · always on while live</span>
           </div>
         </div>
-        <p class="panel-hint">Add every platform you want to broadcast to. Stream keys never leave your Lumio server.</p>
-        <div id="dest-list" class="dest-list"></div>
-        <div class="dest-add">
-          <select id="dest-platform">
-            <option value="youtube">YouTube Live</option>
-            <option value="facebook">Facebook Live</option>
-            <option value="custom">Custom RTMP</option>
-          </select>
-          <input id="dest-key" type="password" placeholder="Stream key" autocomplete="off" />
-          <button id="dest-add-btn" class="btn btn-primary btn-sm">Add</button>
+
+        <div class="connect-row">
+          <button id="connect-youtube" class="btn btn-connect yt hidden">▶&nbsp; Connect YouTube</button>
+          <button id="connect-facebook" class="btn btn-connect fb hidden">ⓕ&nbsp; Connect Facebook</button>
         </div>
-        <details class="dest-help">
-          <summary>Where do I find my stream key?</summary>
-          <p><b>YouTube:</b> YouTube Studio → Go live → Stream — copy the <i>Stream key</i> (Lumio uses the RTMPS ingest <code>a.rtmps.youtube.com/live2</code>).</p>
-          <p><b>Facebook:</b> facebook.com/live/producer → Go live → Streaming software — copy the <i>Stream key</i> (ingest <code>live-api-s.facebook.com:443/rtmp</code>).</p>
-          <p><b>Custom:</b> paste a full <code>rtmp://</code> or <code>rtmps://</code> URL including the key.</p>
+        <p id="connect-hint" class="panel-hint hidden">Sign in once and Lumio creates the broadcast and fetches the
+           stream key for you — no copy-pasting. Accounts are linked to <b>your</b> Lumio server only.</p>
+        <p id="connect-unconfigured" class="panel-hint hidden">One-click connections are off because this server has no
+           Google/Meta API credentials. Add them to <code>.env</code> (see README) — or use a stream key below.</p>
+
+        <div id="dest-list" class="dest-list"></div>
+
+        <details class="dest-help" id="manual-add">
+          <summary>Add a destination with a stream key instead</summary>
+          <div class="dest-add">
+            <select id="dest-platform">
+              <option value="youtube">YouTube Live</option>
+              <option value="facebook">Facebook Live</option>
+              <option value="custom">Custom RTMP</option>
+            </select>
+            <input id="dest-key" type="password" placeholder="Stream key" autocomplete="off" />
+            <button id="dest-add-btn" class="btn btn-primary btn-sm">Add</button>
+          </div>
+          <p><b>YouTube:</b> YouTube Studio → Go live → Stream — copy the <i>Stream key</i> (ingest <code>a.rtmps.youtube.com/live2</code>).</p>
+          <p><b>Facebook:</b> facebook.com/live/producer → Streaming software — copy the <i>Stream key</i> (ingest <code>live-api-s.facebook.com:443/rtmp</code>). A persistent key also works for Facebook groups.</p>
+          <p><b>Custom:</b> paste a full <code>rtmp://</code> or <code>rtmps://</code> URL including the key (Twitch, restream servers, nginx-rtmp…).</p>
         </details>
       </section>
 
