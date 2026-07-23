@@ -144,10 +144,31 @@ app.get('/healthz', (_req, res) => {
 
 /* ------------------------- OAuth destinations ------------------------- */
 
-/* Which platform integrations have API credentials configured — the studio
- * shows "Connect" buttons for these and manual-key entry for the rest. */
+/* Which platform integrations have API credentials configured. Connect
+ * buttons are always shown — unconfigured ones open the in-app setup wizard. */
 app.get('/api/config', (_req, res) => {
   res.json({ youtube: platforms.configured.youtube, facebook: platforms.configured.facebook });
+});
+
+/* In-app setup wizard target: store API credentials pasted in the studio.
+ * Open only while a platform is unconfigured (first-run); after that,
+ * changes require ADMIN_KEY or editing .env on the server. */
+app.post('/api/setup/:platform', (req, res) => {
+  const p = req.params.platform;
+  if (p !== 'youtube' && p !== 'facebook') return res.status(404).json({ error: 'Unknown platform.' });
+
+  const { clientId, clientSecret, adminKey } = req.body || {};
+  const adminOk = process.env.ADMIN_KEY && adminKey === process.env.ADMIN_KEY;
+  if (platforms.configured[p] && !adminOk) {
+    return res.status(403).json({ error: 'Already configured — change credentials in .env on the server (or pass ADMIN_KEY).' });
+  }
+  const id = String(clientId || '').trim();
+  const secret = String(clientSecret || '').trim();
+  if (!id || !secret) return res.status(400).json({ error: 'Both the client ID and the client secret are required.' });
+
+  platforms.setCredentials(p, id, secret);
+  console.log(`[setup] ${p} API credentials configured via in-app wizard`);
+  res.json({ ok: true });
 });
 
 /* Short-lived CSRF states for the OAuth dance. */

@@ -138,26 +138,35 @@ OAuth **tokens never reach the browser** — they're stored on your server in
 connection id plus the display name/avatar. Google tokens auto-refresh;
 Facebook user tokens are exchanged for long-lived (~60-day) tokens.
 
-### Enabling it
+### First-run setup (in-app wizard)
 
-Copy `.env.example` to `.env` and fill in:
+The **Connect YouTube / Connect Facebook buttons are always there**. The first
+time you click one on a fresh server, Lumio opens a guided **setup wizard**
+right in the studio: it walks you through creating the (free) Google Cloud /
+Meta app, shows the exact **redirect URI to copy**, and takes the client
+ID + secret — then continues straight into the sign-in popup. Credentials are
+saved to `.env` on the server, so it's a one-time step per server, not per
+user (that's the same reason StreamYard "just works": they registered their
+own Google/Meta apps once).
 
-1. **Google**: [Google Cloud Console](https://console.cloud.google.com/) →
-   new project → enable **YouTube Data API v3** → OAuth consent screen →
-   Web OAuth client with redirect URI `https://your-domain/auth/youtube/callback`
-   → set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
-   (The connected channel must have live streaming enabled in YouTube Studio.)
-2. **Meta**: [Meta for Developers](https://developers.facebook.com/) → create
-   app → add **Facebook Login** → redirect URI
-   `https://your-domain/auth/facebook/callback` → set `FACEBOOK_APP_ID` /
-   `FACEBOOK_APP_SECRET`. In development the app's testers can go live
-   immediately; public use of `publish_video` / pages permissions requires
-   Meta App Review.
-3. Set `PUBLIC_URL` to the exact HTTPS origin you registered.
+Notes:
 
-No credentials? The Destinations tab automatically falls back to
-**manual stream-key entry** (YouTube / Facebook / custom RTMP), which needs no
-setup at all.
+- **YouTube**: enable **YouTube Data API v3** for the project; the connected
+  channel must have live streaming enabled (YouTube Studio → phone
+  verification, can take up to 24 h) — Lumio checks this at connect time and
+  warns on the destination row if the channel can't stream yet.
+- **Meta**: while your Meta app is in Development mode, only its
+  admins/testers can go live; public use of `publish_video` and the pages
+  permissions requires Meta App Review.
+- Set `PUBLIC_URL` in `.env` if Lumio runs behind a proxy, so the redirect
+  URI matches exactly. Once a platform is configured, changing its
+  credentials requires editing `.env` (or `ADMIN_KEY`) — the open wizard
+  endpoint only works while unconfigured.
+- Prefer files? Copy `.env.example` to `.env` and fill it in manually —
+  the wizard is skipped for any platform that's already configured.
+
+And with zero setup, **manual stream-key entry** (YouTube / Facebook / custom
+RTMP) still works from the same tab.
 
 ## 📡 Hosting a broadcast
 
