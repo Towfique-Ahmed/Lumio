@@ -131,7 +131,9 @@
     const w = 560, h = 720;
     const x = window.screenX + (window.outerWidth - w) / 2;
     const y = window.screenY + (window.outerHeight - h) / 2;
-    window.open(`/auth/${platform}`, 'lumio-auth', `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
+    // Unique name per open — a reused name would hijack a still-closing popup.
+    window.open(`/auth/${platform}`, `lumio-auth-${Date.now()}`,
+      `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
   }
 
   function connectClick(platform) {
