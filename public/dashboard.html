@@ -51,6 +51,11 @@
         <p style="margin-top:10px">Meta app → Facebook Login → Settings → <i>Valid OAuth Redirect URIs</i>:</p>
         <div class="copy-row"><input id="ruri-facebook" type="text" readonly /><button class="btn btn-primary btn-sm" data-copy="ruri-facebook">Copy</button></div>
         <p style="margin-top:10px">If the value here starts with <code>http://</code> instead of <code>https://</code>, your server is running old code — redeploy Lumio or set <code>PUBLIC_URL</code> in <code>.env</code>.</p>
+        <p style="margin-top:10px">Need to replace the API credentials (e.g. you created a new OAuth client)?</p>
+        <div class="connect-row">
+          <button id="change-youtube" class="btn btn-ghost btn-sm">Change YouTube credentials…</button>
+          <button id="change-facebook" class="btn btn-ghost btn-sm">Change Facebook credentials…</button>
+        </div>
       </details>
     </section>
 
@@ -126,6 +131,10 @@
         <label class="field"><span id="setup-secret-label">Client secret</span>
           <input id="setup-client-secret" type="password" autocomplete="off" /></label>
       </div>
+      <label class="field hidden" id="setup-admin-row"><span>Admin key — credentials are already set, so changing them
+          needs the key from your server's <code>.env</code> file (the <code>ADMIN_KEY=</code> line) or the server startup log</span>
+        <input id="setup-admin" type="password" autocomplete="off" placeholder="e.g. kX3f9q2LmZ8w" />
+      </label>
       <p id="setup-error" class="gate-error hidden"></p>
       <div class="modal-actions">
         <button id="setup-cancel" class="btn btn-ghost">Cancel</button>
