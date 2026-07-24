@@ -173,8 +173,12 @@ const app = express();
 app.set('trust proxy', true); // respect X-Forwarded-Proto behind nginx/hosting proxies
 app.use(express.json({ limit: '16kb' }));
 
+const VERSION = (() => {
+  try { return require('./package.json').version; } catch { return 'unknown'; }
+})();
+
 app.get('/healthz', (_req, res) => {
-  res.json({ ok: true, ffmpeg: ffmpegAvailable(), rooms: rooms.size });
+  res.json({ ok: true, version: VERSION, ffmpeg: ffmpegAvailable(), rooms: rooms.size });
 });
 
 /* ------------------------- OAuth destinations ------------------------- */
