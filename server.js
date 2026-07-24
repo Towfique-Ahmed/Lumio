@@ -36,6 +36,7 @@ const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const HLS_ROOT = process.env.HLS_DIR || path.join(__dirname, '.hls');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '.data');
 const BROADCAST_FILE = path.join(DATA_DIR, 'broadcasts.json');
+const REC_DIR = path.join(DATA_DIR, 'recordings');
 
 const MAX_PARTICIPANTS = 10;   // host + guests connected to the studio mesh
 const CHAT_HISTORY = 200;
@@ -74,7 +75,7 @@ function persistRooms() {
   for (const [id, r] of rooms) {
     out[id] = {
       id, hostKey: r.hostKey, title: r.title, description: r.description || '',
-      owner: r.owner || null, createdAt: r.createdAt,
+      owner: r.owner || null, createdAt: r.createdAt, scheduledAt: r.scheduledAt || null,
     };
   }
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -92,8 +93,9 @@ function loadRooms() {
 }
 loadRooms();
 
-function createRoom(title, description, owner) {
+function createRoom(title, description, owner, scheduledAt) {
   const id = crypto.randomBytes(8).toString('base64url').replace(/[^a-z0-9]/gi, '').toLowerCase().padEnd(10, '0').slice(0, 10);
+  const when = Number(scheduledAt);
   const room = Object.assign({
     id,
     hostKey: crypto.randomBytes(16).toString('base64url'),
@@ -101,6 +103,7 @@ function createRoom(title, description, owner) {
     description: String(description || '').slice(0, 2000),
     owner: typeof owner === 'string' ? owner.slice(0, 64) : null,
     createdAt: Date.now(),
+    scheduledAt: Number.isFinite(when) && when > 0 ? when : null,
   }, runtimeDefaults());
   rooms.set(id, room);
   persistRooms();
@@ -303,7 +306,7 @@ app.delete('/api/connections/:id', (req, res) => {
 
 app.post('/api/rooms', (req, res) => {
   const b = req.body || {};
-  const room = createRoom(b.title, b.description, b.owner);
+  const room = createRoom(b.title, b.description, b.owner, b.scheduledAt);
   res.json({ id: room.id, hostKey: room.hostKey, title: room.title });
 });
 
@@ -316,10 +319,60 @@ app.get('/api/broadcasts', (req, res) => {
     .sort((a, b) => b.createdAt - a.createdAt)
     .map(r => ({
       id: r.id, title: r.title, description: r.description || '',
-      live: r.live, createdAt: r.createdAt,
+      live: r.live, createdAt: r.createdAt, scheduledAt: r.scheduledAt || null,
       participants: r.peers.size, viewers: r.viewers.size,
     }));
   res.json({ broadcasts: list });
+});
+
+/* ------------------------ recordings (Library) ------------------------ */
+
+function roomRecDir(roomId) { return path.join(REC_DIR, roomId); }
+
+function ownerRoom(req, roomId) {
+  const room = rooms.get(String(roomId));
+  if (!room) return null;
+  const owner = String(req.query.owner || '');
+  return owner && room.owner === owner ? room : null;
+}
+
+app.get('/api/recordings', (req, res) => {
+  const owner = String(req.query.owner || '');
+  if (!owner) return res.json({ recordings: [] });
+  const out = [];
+  for (const room of rooms.values()) {
+    if (room.owner !== owner) continue;
+    let files = [];
+    try { files = fs.readdirSync(roomRecDir(room.id)); } catch { continue; }
+    for (const f of files.filter(f => f.endsWith('.mp4'))) {
+      try {
+        const st = fs.statSync(path.join(roomRecDir(room.id), f));
+        out.push({
+          room: room.id, title: room.title, file: f,
+          bytes: st.size, mtime: st.mtimeMs,
+          recording: room.live && room.recordingFile === f,
+        });
+      } catch { /* raced with delete */ }
+    }
+  }
+  out.sort((a, b) => b.mtime - a.mtime);
+  res.json({ recordings: out });
+});
+
+app.get('/recordings/:room/:file', (req, res) => {
+  const room = ownerRoom(req, req.params.room);
+  const file = String(req.params.file);
+  if (!room || !/^[\w.-]+\.mp4$/.test(file)) return res.status(403).send('Not your recording.');
+  res.download(path.join(roomRecDir(room.id), file), `${room.title.replace(/[^\w -]+/g, '')}.mp4`, err => {
+    if (err && !res.headersSent) res.status(404).send('Recording not found.');
+  });
+});
+
+app.delete('/api/recordings/:room/:file', (req, res) => {
+  const room = ownerRoom(req, req.params.room);
+  const file = String(req.params.file);
+  if (!room || !/^[\w.-]+\.mp4$/.test(file)) return res.status(403).json({ error: 'Not your recording.' });
+  fs.rm(path.join(roomRecDir(room.id), file), { force: true }, () => res.json({ ok: true }));
 });
 
 app.delete('/api/broadcasts/:id', (req, res) => {
@@ -345,6 +398,7 @@ app.get('/api/rooms/:id', (req, res) => {
     id: room.id,
     title: room.title,
     description: room.description || '',
+    scheduledAt: room.scheduledAt || null,
     live: room.live,
     viewers: room.viewers.size,
     participants: room.peers.size,
@@ -382,7 +436,7 @@ function ffmpegAvailable() {
 
 /* --------------------------- FFmpeg relay --------------------------- */
 
-function buildFfmpegArgs(room, rtmpUrls) {
+function buildFfmpegArgs(room, rtmpUrls, recordPath) {
   const dir = roomHlsDir(room);
   const args = [
     '-hide_banner', '-loglevel', 'warning',
@@ -406,7 +460,7 @@ function buildFfmpegArgs(room, rtmpUrls) {
   ].join(':');
   const hlsOut = path.join(dir, 'live.m3u8');
 
-  if (rtmpUrls.length === 0) {
+  if (rtmpUrls.length === 0 && !recordPath) {
     // Webinar-only: HLS is the single output.
     args.push('-f', 'hls',
       '-hls_time', '2', '-hls_list_size', '6',
@@ -416,6 +470,8 @@ function buildFfmpegArgs(room, rtmpUrls) {
   } else {
     const tee = [
       `[${hlsOpts}]${hlsOut}`,
+      // Fragmented MP4 stays playable even though it's written live.
+      ...(recordPath ? [`[f=mp4:movflags=frag_keyframe+empty_moov+default_base_moof:onfail=ignore]${recordPath}`] : []),
       ...rtmpUrls.map(u => `[f=flv:onfail=ignore]${u}`),
     ].join('|');
     args.push('-f', 'tee', tee);
@@ -486,6 +542,7 @@ function stopBroadcast(room, notify = true) {
   }
   runCleanups(room.liveCleanups);
   room.liveCleanups = [];
+  room.recordingFile = null;
   if (wasLive && notify) broadcastAll(room, { type: 'live', live: false });
   // Keep the last HLS segments around briefly so late viewers see the tail,
   // then clean up.
@@ -723,7 +780,16 @@ mediaWss.on('connection', ws => {
         fs.rmSync(dir, { recursive: true, force: true });
         fs.mkdirSync(dir, { recursive: true });
 
-        const ffmpeg = spawn(FFMPEG, buildFfmpegArgs(room, resolved.urls), {
+        // Server-side recording (StreamYard-style Library) unless disabled.
+        let recordPath = null;
+        if (msg.record !== false) {
+          fs.mkdirSync(roomRecDir(room.id), { recursive: true });
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          room.recordingFile = `${stamp}-${crypto.randomBytes(3).toString('hex')}.mp4`;
+          recordPath = path.join(roomRecDir(room.id), room.recordingFile);
+        }
+
+        const ffmpeg = spawn(FFMPEG, buildFfmpegArgs(room, resolved.urls, recordPath), {
           stdio: ['pipe', 'ignore', 'pipe'],
         });
         room.ffmpeg = ffmpeg;
@@ -756,6 +822,7 @@ mediaWss.on('connection', ws => {
           destinations: resolved.urls.length,
           outputs: resolved.outputs,
           failures: resolved.failures,
+          recording: !!recordPath,
           hls: `/hls/${room.id}/live.m3u8`,
         });
         broadcastAll(room, { type: 'live', live: true });

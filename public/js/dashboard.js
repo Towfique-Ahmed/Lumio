@@ -335,9 +335,11 @@
       const hasKey = !!localStorage.getItem(`lumio.hostkey.${b.id}`);
       const row = document.createElement('div');
       row.className = 'broadcast' + (b.live ? ' is-live' : '');
+      const sched = b.scheduledAt && !b.live
+        ? `<span class="b-sched">📅 ${new Date(b.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>` : '';
       row.innerHTML = `
         <div class="broadcast-info">
-          <b>${U.escapeHtml(b.title)} ${b.live ? '<span class="b-live">● LIVE</span>' : ''}</b>
+          <b>${U.escapeHtml(b.title)} ${b.live ? '<span class="b-live">● LIVE</span>' : ''} ${sched}</b>
           <span>${b.description ? U.escapeHtml(b.description.slice(0, 120)) : 'No description'} · created ${new Date(b.createdAt).toLocaleDateString()}</span>
         </div>
         <div class="broadcast-actions">
@@ -397,6 +399,15 @@
     $('#create-title').focus();
   });
   $('#create-cancel').addEventListener('click', () => $('#create-modal').classList.add('hidden'));
+  $('#create-schedule').addEventListener('change', e => {
+    $('#create-when-row').classList.toggle('hidden', !e.target.checked);
+    if (e.target.checked && !$('#create-when').value) {
+      // default: one hour from now, in the local-datetime format the input wants
+      const d = new Date(Date.now() + 60 * 60 * 1000);
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      $('#create-when').value = d.toISOString().slice(0, 16);
+    }
+  });
 
   $('#create-go').addEventListener('click', async () => {
     const err = $('#create-error');
@@ -405,10 +416,12 @@
     try {
       const title = $('#create-title').value.trim() || 'Untitled broadcast';
       const description = $('#create-desc').value.trim();
+      const scheduledAt = $('#create-schedule').checked && $('#create-when').value
+        ? new Date($('#create-when').value).getTime() : null;
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, owner }),
+        body: JSON.stringify({ title, description, owner, scheduledAt }),
       });
       if (!res.ok) throw new Error(`Server error (${res.status}).`);
       const room = await res.json();
@@ -425,9 +438,51 @@
     }
   });
 
+  /* ------------------------------ library ------------------------------ */
+
+  const fmtBytes = n => n > 1e9 ? (n / 1e9).toFixed(1) + ' GB'
+    : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' kB';
+
+  async function renderLibrary() {
+    const list = $('#rec-list');
+    let recs = [];
+    try {
+      const res = await fetch(`/api/recordings?owner=${encodeURIComponent(owner)}`);
+      recs = (await res.json()).recordings || [];
+    } catch { return; }
+    list.innerHTML = '';
+    if (!recs.length) {
+      list.innerHTML = '<p class="dest-empty">No recordings yet — every broadcast is recorded on your server while you stream (toggle ⏺ in the studio).</p>';
+      return;
+    }
+    for (const r of recs) {
+      const row = document.createElement('div');
+      row.className = 'broadcast';
+      row.innerHTML = `
+        <div class="broadcast-info">
+          <b>🎬 ${U.escapeHtml(r.title)} ${r.recording ? '<span class="b-live">● RECORDING</span>' : ''}</b>
+          <span>${new Date(r.mtime).toLocaleString()} · ${fmtBytes(r.bytes)}</span>
+        </div>
+        <div class="broadcast-actions">
+          ${r.recording ? '' : `<a class="btn btn-primary btn-sm" href="/recordings/${r.room}/${encodeURIComponent(r.file)}?owner=${encodeURIComponent(owner)}">⬇ Download</a>
+          <button class="dest-del" data-del-rec="${r.room}/${encodeURIComponent(r.file)}" title="Delete recording">✕</button>`}
+        </div>`;
+      list.appendChild(row);
+    }
+  }
+
+  $('#rec-list').addEventListener('click', async e => {
+    const del = e.target.closest('[data-del-rec]');
+    if (del && confirm('Delete this recording permanently?')) {
+      await fetch(`/api/recordings/${del.dataset.delRec}?owner=${encodeURIComponent(owner)}`, { method: 'DELETE' }).catch(() => {});
+      renderLibrary();
+    }
+  });
+
   /* ------------------------------ boot ------------------------------ */
 
   renderDests();
   renderBroadcasts();
-  setInterval(renderBroadcasts, 15_000);
+  renderLibrary();
+  setInterval(() => { renderBroadcasts(); renderLibrary(); }, 15_000);
 })();

@@ -59,8 +59,7 @@
     camOn: true,
     live: false,
     liveStart: 0,
-    recordLocally: false,
-    recordedChunks: [],
+    recordServer: true, // save a copy to the server Library while live
     mediaWs: null,
     recorder: null,
     timerId: null,
@@ -73,7 +72,18 @@
 
   const brand = Object.assign({
     title: '', color: '#7c3aed', showTitle: false, showNames: true, mirror: false,
+    logo: null, bg: null, overlay: null, // data-URL images
   }, load(BRAND_KEY));
+
+  /* Decoded brand images for the compositor. */
+  const brandImgs = { logo: null, bg: null, overlay: null };
+  function loadBrandImg(kind) {
+    if (!brand[kind]) { brandImgs[kind] = null; return; }
+    const img = new Image();
+    img.onload = () => { brandImgs[kind] = img; };
+    img.src = brand[kind];
+  }
+  ['logo', 'bg', 'overlay'].forEach(loadBrandImg);
 
   const allDests = load(DEST_KEY) || [];
   let selection = load(`lumio.sel.${roomId}`);
@@ -122,6 +132,10 @@
     if (info.description) state.roomDesc = info.description;
     $('#gate-title').textContent = info.title;
     $('#studio-title').textContent = info.title;
+    if (info.scheduledAt && info.scheduledAt > Date.now()) {
+      $('#studio-title').insertAdjacentHTML('afterend',
+        `<span class="stage-pill">📅 ${new Date(info.scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>`);
+    }
     document.title = `${info.title} — Lumio Studio`;
   }).catch(() => {});
 
@@ -506,11 +520,21 @@
     return rects;
   }
 
+  function drawImgCover(img, x, y, w, h) {
+    const scale = Math.max(w / img.width, h / img.height);
+    const sw = w / scale, sh = h / scale;
+    ctx.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+  }
+
   function drawFrame() {
-    const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, '#0b0716'); g.addColorStop(1, '#171029');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+    if (brandImgs.bg && brandImgs.bg.complete) {
+      drawImgCover(brandImgs.bg, 0, 0, W, H);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W, H);
+      g.addColorStop(0, '#0b0716'); g.addColorStop(1, '#171029');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     const cast = onStageParts();
     const pres = presentation();
@@ -557,6 +581,14 @@
     drawBranding();
     if (state.activeBanner) drawBanner();
     else if (state.featured) drawFeatured();
+    if (brandImgs.overlay && brandImgs.overlay.complete) ctx.drawImage(brandImgs.overlay, 0, 0, W, H);
+    if (brandImgs.logo && brandImgs.logo.complete) {
+      const lh = 64, lw = lh * (brandImgs.logo.width / brandImgs.logo.height);
+      const y = brand.showTitle && brand.title ? 66 : 20;
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(brandImgs.logo, W - lw - 20, y, lw, lh);
+      ctx.globalAlpha = 1;
+    }
     if (state.live) drawLiveBadge();
   }
 
@@ -642,18 +674,19 @@
   }
 
   function drawLiveBadge() {
+    // Top-left, like StreamYard's LIVE chip (logo owns the top-right corner).
     const t = elapsed();
     ctx.font = '800 18px Inter, sans-serif';
     const label = `LIVE ${t}`;
     const w = ctx.measureText(label).width + 44;
     const y = brand.showTitle && brand.title ? 62 : 16;
     ctx.fillStyle = 'rgba(11,7,22,0.8)';
-    ctx.beginPath(); ctx.roundRect(W - w - 20, y, w, 34, 17); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(20, y, w, 34, 17); ctx.fill();
     ctx.fillStyle = '#ef4444';
-    ctx.beginPath(); ctx.arc(W - w - 20 + 18, y + 17, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(38, y + 17, 5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(label, W - w - 20 + 31, y + 18);
+    ctx.fillText(label, 51, y + 18);
   }
 
   setInterval(drawFrame, 1000 / FPS);
@@ -1007,6 +1040,39 @@
   $('#brand-show-names').addEventListener('change', e => { brand.showNames = e.target.checked; saveBrand(); });
   $('#brand-mirror').addEventListener('change', e => { brand.mirror = e.target.checked; saveBrand(); renderStrip(); });
 
+  /* brand images: logo / background / overlay */
+  function wireBrandImage(kind, inputSel, clearSel) {
+    const input = $(inputSel), clear = $(clearSel);
+    clear.classList.toggle('hidden', !brand[kind]);
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (file.size > 2_000_000) {
+        logLine(`✗ ${kind} image is too large (max 2 MB) — resize it and try again.`);
+        input.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        brand[kind] = reader.result;
+        try { saveBrand(); } catch { logLine('✗ Could not store the image (browser storage is full).'); brand[kind] = null; return; }
+        loadBrandImg(kind);
+        clear.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+    });
+    clear.addEventListener('click', () => {
+      brand[kind] = null;
+      brandImgs[kind] = null;
+      saveBrand();
+      input.value = '';
+      clear.classList.add('hidden');
+    });
+  }
+  wireBrandImage('logo', '#brand-logo', '#brand-logo-clear');
+  wireBrandImage('bg', '#brand-bg', '#brand-bg-clear');
+  wireBrandImage('overlay', '#brand-overlay', '#brand-overlay-clear');
+
   /* ------------------------- outputs (per-broadcast) ------------------------- */
 
   function destLabel(d) {
@@ -1072,9 +1138,9 @@
 
   $('#btn-record').addEventListener('click', () => {
     if (state.live) return;
-    state.recordLocally = !state.recordLocally;
-    $('#btn-record').innerHTML = `⏺ <b>${state.recordLocally ? 'on' : 'off'}</b>`;
-    $('#btn-record').classList.toggle('rec-on', state.recordLocally);
+    state.recordServer = !state.recordServer;
+    $('#btn-record').innerHTML = `⏺ <b>${state.recordServer ? 'on' : 'off'}</b>`;
+    $('#btn-record').classList.toggle('rec-on', state.recordServer);
   });
 
   $('#btn-golive').addEventListener('click', () => {
@@ -1126,7 +1192,8 @@
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type: 'start', room: roomId, hostKey,
-        destinations: destinationPayload(), width: W, height: H, fps: FPS,
+        destinations: destinationPayload(), record: state.recordServer,
+        width: W, height: H, fps: FPS,
       }));
     };
 
@@ -1137,7 +1204,7 @@
         state.live = true;
         state.liveStart = Date.now();
         setLiveUi('live');
-        logLine(`● LIVE — watch page + ${msg.destinations} platform destination(s).`);
+        logLine(`● LIVE — watch page + ${msg.destinations} platform destination(s).${msg.recording ? ' Recording to Library.' : ''}`);
         (msg.outputs || []).forEach(o => {
           if (o.watchUrl) logLine(`  ↳ ${o.platform}${o.label ? ` (${o.label})` : ''}: ${o.watchUrl}`);
         });
@@ -1166,7 +1233,6 @@
   function beginRecorder() {
     const stream = canvas.captureStream(FPS);
     mixDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-    state.recordedChunks = [];
     state.recorder = new MediaRecorder(stream, {
       mimeType: pickMime(),
       videoBitsPerSecond: 3_500_000,
@@ -1174,7 +1240,6 @@
     });
     state.recorder.ondataavailable = async e => {
       if (!e.data.size) return;
-      if (state.recordLocally) state.recordedChunks.push(e.data);
       if (state.mediaWs && state.mediaWs.readyState === WebSocket.OPEN) {
         state.mediaWs.send(await e.data.arrayBuffer());
       }
@@ -1196,20 +1261,11 @@
       state.mediaWs = null;
     }
 
-    if (wasLive && state.recordLocally && state.recordedChunks.length) downloadRecording();
     setLiveUi('idle');
-    if (wasLive && !fromError) logLine('■ Stream ended.');
-  }
-
-  function downloadRecording() {
-    const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `lumio-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    state.recordedChunks = [];
-    logLine('⬇ Local recording saved.');
+    if (wasLive && !fromError) {
+      logLine('■ Stream ended.');
+      if (state.recordServer) logLine('🎬 Recording saved — find it in the dashboard Library.');
+    }
   }
 
   /* ------------------------------ UI helpers ------------------------------ */
