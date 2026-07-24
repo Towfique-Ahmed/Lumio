@@ -37,7 +37,7 @@
   function saveDests() { save(DEST_KEY, destinations); }
 
   const platformConfig = { youtube: false, facebook: false };
-  fetch('/api/config').then(r => r.json()).then(cfg => {
+  const configReady = fetch('/api/config').then(r => r.json()).then(cfg => {
     Object.assign(platformConfig, cfg);
     // Show the exact callback URLs this server sends — the #1 cause of
     // redirect_uri_mismatch is these not matching the console registration.
@@ -155,13 +155,18 @@
       `popup=yes,width=${w},height=${h},left=${x},top=${y}`);
   }
 
-  function connectClick(platform) {
+  async function connectClick(platform) {
+    // Don't decide before we know the server's state — otherwise a fast
+    // click could open the wizard on an already-configured server.
+    await configReady.catch(() => {});
     if (platformConfig[platform]) openAuthPopup(platform);
     else openSetup(platform);
   }
 
   $('#connect-youtube').addEventListener('click', () => connectClick('youtube'));
   $('#connect-facebook').addEventListener('click', () => connectClick('facebook'));
+  $('#change-youtube').addEventListener('click', async () => { await configReady.catch(() => {}); openSetup('youtube'); });
+  $('#change-facebook').addEventListener('click', async () => { await configReady.catch(() => {}); openSetup('facebook'); });
 
   window.addEventListener('message', ev => {
     if (ev.origin !== location.origin || !ev.data || ev.data.type !== 'lumio-auth') return;
@@ -220,16 +225,21 @@
   function openSetup(platform) {
     setupPlatform = platform;
     const s = SETUP[platform];
-    $('#setup-title').textContent = s.title;
+    $('#setup-title').textContent = platformConfig[platform]
+      ? s.title.replace('Set up', 'Change') : s.title;
     $('#setup-id-label').textContent = s.idLabel;
     $('#setup-secret-label').textContent = s.secretLabel;
     $('#setup-steps').innerHTML = s.steps.map(x => `<li>${x}</li>`).join('');
     $('#setup-redirect').value = `${location.origin}/auth/${platform}/callback`;
     $('#setup-client-id').value = '';
     $('#setup-client-secret').value = '';
+    $('#setup-admin').value = '';
+    // Replacing existing credentials requires the server's admin key.
+    $('#setup-admin-row').classList.toggle('hidden', !platformConfig[platform]);
     $('#setup-error').classList.add('hidden');
     $('#setup-modal').classList.remove('hidden');
   }
+
 
   $('#setup-cancel').addEventListener('click', () => $('#setup-modal').classList.add('hidden'));
 
@@ -244,10 +254,14 @@
         body: JSON.stringify({
           clientId: $('#setup-client-id').value,
           clientSecret: $('#setup-client-secret').value,
+          adminKey: $('#setup-admin').value.trim() || undefined,
         }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (!res.ok) {
+        if (body.needAdminKey) $('#setup-admin-row').classList.remove('hidden');
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
       platformConfig[setupPlatform] = true;
       $('#setup-modal').classList.add('hidden');
       openAuthPopup(setupPlatform);

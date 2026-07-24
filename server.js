@@ -208,7 +208,11 @@ app.post('/api/setup/:platform', (req, res) => {
   const { clientId, clientSecret, adminKey } = req.body || {};
   const adminOk = process.env.ADMIN_KEY && adminKey === process.env.ADMIN_KEY;
   if (platforms.configured[p] && !adminOk) {
-    return res.status(403).json({ error: 'Already configured — change credentials in .env on the server (or pass ADMIN_KEY).' });
+    return res.status(403).json({
+      needAdminKey: true,
+      error: 'This platform is already configured. To replace the credentials, paste the admin key — ' +
+        'it is in the .env file on your server (the ADMIN_KEY= line) and in the server startup log.',
+    });
   }
   const id = String(clientId || '').trim();
   const secret = String(clientSecret || '').trim();
@@ -772,7 +776,8 @@ mediaWss.on('connection', ws => {
 /* ------------------------------- boot ------------------------------- */
 
 server.listen(PORT, () => {
-  console.log(`Lumio Studio running at http://localhost:${PORT}`);
+  console.log(`Lumio Studio v${VERSION} running at http://localhost:${PORT}`);
+  console.log(`Admin key (to change platform credentials from the dashboard): ${platforms.ensureAdminKey()}`);
   if (!ffmpegAvailable()) {
     console.warn('⚠ FFmpeg not found — install it (e.g. `apt install ffmpeg`) or set FFMPEG_PATH. ' +
       'The studio and guest mesh work without it; going live requires it.');
