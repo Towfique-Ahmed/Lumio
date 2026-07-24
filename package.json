@@ -1,6 +1,6 @@
 {
   "name": "lumio-studio",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Browser-based live streaming studio (StreamYard-style) that broadcasts to YouTube, Facebook and any RTMP destination.",
   "main": "server.js",
   "type": "commonjs",

@@ -45,9 +45,16 @@
       $('#ruri-youtube').value = cfg.redirectUris.youtube;
       $('#ruri-facebook').value = cfg.redirectUris.facebook;
     } else {
-      // Old server without redirectUris support — derive from the page origin.
+      // The web files are newer than the running server process: the backend
+      // predates redirectUris support, so its OAuth redirect fix isn't live
+      // either. Restarting Node is the fix — say so loudly.
       $('#ruri-youtube').value = `${location.origin}/auth/youtube/callback`;
       $('#ruri-facebook').value = `${location.origin}/auth/facebook/callback`;
+      const panel = $('#redirect-help');
+      panel.open = true;
+      panel.insertAdjacentHTML('afterbegin',
+        '<p class="gate-error">⚠ Your Node server process is running OLD code (it was updated on disk but not restarted). ' +
+        'OAuth will keep failing with redirect_uri_mismatch until you <b>restart the Lumio server process</b>.</p>');
     }
   }).catch(() => {});
 
