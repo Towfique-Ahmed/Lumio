@@ -33,7 +33,7 @@
     </div>
     <div class="topbar-actions">
       <button id="btn-invite" class="btn btn-ghost">🔗 Invite</button>
-      <button id="btn-record" class="btn btn-ghost" title="Also save a local recording while live">⏺ <b>off</b></button>
+      <button id="btn-record" class="btn btn-ghost rec-on" title="Record this broadcast on the server (Library) while live">⏺ <b>on</b></button>
       <button id="btn-golive" class="btn btn-live" disabled>Go Live</button>
     </div>
   </header>
@@ -64,13 +64,14 @@
     <section class="stage">
       <div class="canvas-wrap">
         <canvas id="program" width="1280" height="720"></canvas>
-        <!-- StreamYard-style layout picker, overlaid bottom-left of the stage -->
-        <div class="layout-bar" role="radiogroup" aria-label="Layout">
-          <button class="lay on" data-layout="grid" title="Everyone in a grid">▦</button>
-          <button class="lay" data-layout="spotlight" title="One big + strip">◰</button>
-          <button class="lay" data-layout="sidebar" title="Screen + faces column">◧</button>
-          <button class="lay" data-layout="screen" title="Screen share only">⬜</button>
-        </div>
+      </div>
+
+      <!-- StreamYard-style layout picker, centered under the stage -->
+      <div class="layout-row" role="radiogroup" aria-label="Layout">
+        <button class="lay on" data-layout="grid" title="Everyone in a grid">▦</button>
+        <button class="lay" data-layout="spotlight" title="One big + strip">◰</button>
+        <button class="lay" data-layout="sidebar" title="Screen + faces column">◧</button>
+        <button class="lay" data-layout="screen" title="Screen share only">⬜</button>
       </div>
 
       <!-- everyone in the studio; click to add/remove from stage -->
@@ -150,6 +151,24 @@
         <label class="check"><input id="brand-show-title" type="checkbox" /> <span>Show headline bar</span></label>
         <label class="check"><input id="brand-show-names" type="checkbox" checked /> <span>Show name labels on tiles</span></label>
         <label class="check"><input id="brand-mirror" type="checkbox" /> <span>Mirror my camera (preview only)</span></label>
+
+        <h4 class="people-h">Images</h4>
+        <div class="brand-asset">
+          <span>Logo <i>(top-right watermark)</i></span>
+          <input id="brand-logo" type="file" accept="image/*" />
+          <button id="brand-logo-clear" class="btn btn-ghost btn-xs hidden">✕</button>
+        </div>
+        <div class="brand-asset">
+          <span>Background <i>(behind the tiles)</i></span>
+          <input id="brand-bg" type="file" accept="image/*" />
+          <button id="brand-bg-clear" class="btn btn-ghost btn-xs hidden">✕</button>
+        </div>
+        <div class="brand-asset">
+          <span>Overlay <i>(full-frame PNG on top)</i></span>
+          <input id="brand-overlay" type="file" accept="image/*" />
+          <button id="brand-overlay-clear" class="btn btn-ghost btn-xs hidden">✕</button>
+        </div>
+        <p class="panel-hint">Images are stored in this browser. PNG with transparency works best for logo &amp; overlay.</p>
       </section>
 
       <!-- Settings: outputs + status -->

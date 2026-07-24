@@ -67,6 +67,15 @@
       </div>
       <div id="broadcast-list" class="broadcast-list"></div>
     </section>
+
+    <!-- ============ LIBRARY ============ -->
+    <section class="dash-section">
+      <div class="dash-head">
+        <h2>Library</h2>
+        <span class="dash-sub">Recordings of your broadcasts, saved on your server while you stream.</span>
+      </div>
+      <div id="rec-list" class="broadcast-list"></div>
+    </section>
   </main>
 
   <!-- ============ CREATE BROADCAST MODAL ============ -->
@@ -82,6 +91,10 @@
       <div class="field"><span>Broadcast to</span>
         <div id="create-dests" class="create-dests"></div>
       </div>
+      <label class="check"><input id="create-schedule" type="checkbox" /> <span>Schedule for later</span></label>
+      <label class="field hidden" id="create-when-row"><span>Scheduled start time</span>
+        <input id="create-when" type="datetime-local" />
+      </label>
       <p id="create-error" class="gate-error hidden"></p>
       <div class="modal-actions">
         <button id="create-cancel" class="btn btn-ghost">Cancel</button>
