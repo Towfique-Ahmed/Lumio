@@ -1,100 +1,131 @@
-# Lumio 🎥
+# Lumio Studio 🎥
 
-**Turn any YouTube or Facebook live stream into a professional webinar page.**
+**A StreamYard-style live streaming studio that runs entirely in the browser.**
+Invite guests over WebRTC, compose a branded multi-person scene, and multistream
+live to **YouTube**, **Facebook** and any custom RTMP destination — no downloads,
+no accounts.
 
-Lumio is a lightweight, zero-dependency web app for hosting webinars and live-stream
-events on top of **YouTube Live** and **Facebook Live**. Paste a stream link, add your
-event details, and Lumio generates a branded webinar room — with a countdown lobby,
-the live player, embedded chat and one self-contained shareable link.
+```
+ host browser ─┬─────── WebRTC mesh ───────┬─ guest browser
+               │  (camera / mic / screen)   │  (camera / mic / screen)
+               │                            └─ guest browser …
+               │
+   canvas compositor + audio mixer
+               │
+      WebM over WebSocket
+               │
+        Node relay ── FFmpeg ──┬─▶ YouTube Live   (rtmps)
+                               ├─▶ Facebook Live  (rtmps)
+                               └─▶ Custom RTMP    (Twitch, X, …)
+```
+
+This mirrors how StreamYard works — a browser studio, a WebRTC layer that brings
+in remote guests, cloud-side compositing, and one encode fanned out to many
+platforms ([how multistreaming works](https://streamyard.com/blog/how-multistreaming-works-technology-explained)).
+The difference: Lumio runs on **your own** server instead of a hosted cloud.
 
 ## ✨ Features
 
-- **YouTube & Facebook Live support** — works with regular videos, live streams,
-  channel "always-live" links (`/channel/UC…/live`), `youtu.be` short links,
-  `fb.watch` links and any public Facebook video URL. Platform is auto-detected.
-- **Countdown lobby** — attendees who arrive early see a live countdown that flips
-  to the player automatically at the scheduled start time.
-- **Live chat** — YouTube live chat is embedded next to the player
-  (via `youtube.com/live_chat?v=…&embed_domain=…`). Facebook events show a
-  link-out to the conversation, since Facebook doesn't offer an embeddable chat.
-- **Self-contained share links** — the whole event (title, schedule, speakers,
-  stream URL, options) is encoded into the `watch.html?w=…` link as base64url JSON,
-  so a link works for anyone, on any device, with no backend.
-- **Dashboard** — create, edit, share and delete webinars; events are persisted in
-  `localStorage`. Status badges (UPCOMING / LIVE / ENDED) update automatically
-  based on the schedule and duration.
-- **Replay state** — after the scheduled end, the page switches to a replay view.
-- **No backend, no build step, no sign-up** — pure HTML/CSS/JS. Host it anywhere
-  static files can live (GitHub Pages, Netlify, Vercel, S3, …).
+- **Multi-guest studio (WebRTC mesh)** — invite guests with a link; they join
+  from any browser, see and hear each other, and appear in the broadcast.
+- **Greenroom / backstage** — guests wait off-air until the host adds them to
+  the stage; the host can remove guests or drop them back to the greenroom.
+- **Scene layouts** — Auto grid, Solo spotlight, Screen only, Screen + camera
+  (PiP), and News (screen + people sidebar), switchable in one click.
+- **Screen sharing** — from the host or any guest, with audio.
+- **Branding** — headline title bar, brand color, uploaded logo (top-right),
+  custom background image, and camera mirroring.
+- **Lower-third banners & ticker** — add name/title banners and put one on air;
+  scroll a ticker message along the bottom.
+- **Multistreaming** — YouTube, Facebook and custom RTMP destinations, each
+  individually toggleable, all broadcast at once (FFmpeg `tee`, `onfail=ignore`).
+- **Audio mixer** — host mic + every on-stage guest + screen audio mixed into
+  the broadcast; live mic VU meter.
+- **Backstage chat** — private text chat between host and guests (off-air).
+- **Local recording** — optionally save a WebM of the program feed while live.
 
 ## 🚀 Getting started
 
-Serve the folder with any static file server (the YouTube chat embed requires a
-real hostname, so use a server rather than opening `index.html` from disk):
+Requires **Node.js ≥ 18** and **FFmpeg** on the server.
 
 ```bash
-# Python
-python3 -m http.server 8080
-
-# or Node
-npx serve .
+sudo apt install ffmpeg     # or: brew install ffmpeg
+npm install
+npm start                   # → http://localhost:3000
 ```
 
-Then open <http://localhost:8080>.
+Open `http://localhost:3000`, allow camera/mic, and you're in the studio.
 
-### Creating a webinar
+> **HTTPS is required off-localhost.** Browsers only grant camera/screen/WebRTC
+> access on `localhost` or HTTPS origins, so for anything beyond local testing
+> put the server behind TLS (Caddy, nginx + Let's Encrypt, or a host that
+> terminates TLS). The WebSockets auto-upgrade to `wss://` on HTTPS pages.
+> For guests behind strict NATs you'll also want a **TURN** server (only STUN is
+> configured by default, in `public/js/rtc.js`).
 
-1. Go live on YouTube (YouTube Studio) or Facebook (Live Producer) as usual.
-2. Click **+ New Webinar** in Lumio and paste the stream URL — Lumio validates it
-   and detects the platform live as you type.
-3. Add a title, date/time, duration, host, speakers and an agenda.
-4. Copy the generated link and share it with your audience.
+## 📡 Running a show
 
-### Supported stream URLs
+1. **Enter the studio** as host (name + camera/mic).
+2. **Invite guests** — click *Invite guest*, send the link. Guests join and land
+   in the greenroom.
+3. **Bring guests on** — in the *People* tab, click *Add to stage*.
+4. **Set the scene** — pick a layout, share your screen, add banners, set your
+   brand/logo. The canvas preview **is** exactly what viewers will see.
+5. **Add destinations** — in the *Stream* tab, paste your YouTube / Facebook
+   stream keys (or a custom RTMP URL) and enable them.
+6. **Go Live.** Lumio encodes once and pushes to every enabled platform.
 
-| Platform | Examples |
+### Getting your stream keys
+
+| Platform | Where | Ingest Lumio uses |
+| --- | --- | --- |
+| YouTube | Studio → *Go live* → *Stream* → **Stream key** | `rtmps://a.rtmps.youtube.com:443/live2/KEY` |
+| Facebook | facebook.com/live/producer → *Streaming software* → **Stream key** | `rtmps://live-api-s.facebook.com:443/rtmp/KEY` |
+| Custom | your RTMP server (Twitch, X, nginx-rtmp…) | the full `rtmp(s)://…` URL you paste |
+
+Keys live only in the host's `localStorage` and are sent only to your own Lumio
+server, which hands them to FFmpeg.
+
+## 🧠 How it works
+
+| Stage | Technology |
 | --- | --- |
-| YouTube video / live | `youtube.com/watch?v=ID`, `youtu.be/ID`, `youtube.com/live/ID`, `youtube.com/embed/ID` |
-| YouTube channel live | `youtube.com/channel/UC…/live`, `youtube.com/embed/live_stream?channel=UC…` |
-| Facebook Live / video | `facebook.com/<page>/videos/<id>`, `facebook.com/watch?v=<id>`, `fb.watch/<code>` |
+| Capture | `getUserMedia` (cam/mic), `getDisplayMedia` (screen) |
+| Guests | full-mesh **WebRTC** with the *perfect-negotiation* pattern; a WS signaling relay (`/rtc`) exchanges SDP/ICE and room presence |
+| Compositing | `<canvas>` 1280×720 @ 30fps — layouts, banners, ticker, logo, LIVE badge |
+| Audio mix | Web Audio API graph → `MediaStreamAudioDestinationNode` |
+| Encoding (browser) | `canvas.captureStream()` + `MediaRecorder` (WebM, ~3.5 Mbps) |
+| Transport | binary WebSocket chunks (500 ms) to the Node relay (`/stream`) |
+| Encoding (server) | FFmpeg `libx264 veryfast zerolatency` + AAC, 2s GOP |
+| Delivery | `-f flv` (single) or `-f tee` (simultaneous multistream) |
 
-## 🧠 How the embeds work
-
-- **YouTube player** — official IFrame embed: `https://www.youtube.com/embed/VIDEO_ID`
-  (or `https://www.youtube.com/embed/live_stream?channel=CHANNEL_ID` for a channel's
-  current live stream). The stream must be **public** with embedding enabled.
-- **YouTube live chat** — `https://www.youtube.com/live_chat?v=VIDEO_ID&embed_domain=<your-host>`.
-  YouTube requires `embed_domain` to match the page's hostname, which Lumio sets
-  automatically at runtime.
-- **Facebook player** — official Video Player plugin:
-  `https://www.facebook.com/plugins/video.php?href=<encoded-video-url>`.
-  The video must be **public**; Facebook has no embeddable chat, so Lumio links
-  viewers to the comments on Facebook instead.
+Browsers can't emit RTMP, so a server relay is required — the same reason
+StreamYard has a backend.
 
 ## 📁 Project structure
 
 ```
-├── index.html          # Landing page + webinar dashboard (create/edit/share)
-├── watch.html          # Attendee-facing webinar room (lobby → live → ended)
-└── assets/
-    ├── css/style.css   # Full design system (dark theme, responsive)
+├── server.js                 # WebRTC signaling (/rtc) + FFmpeg relay (/stream)
+├── package.json
+└── public/
+    ├── index.html            # Host studio
+    ├── guest.html            # Guest join / greenroom
+    ├── css/studio.css
     ├── img/favicon.svg
     └── js/
-        ├── utils.js    # URL parsing, embed builders, link codec, storage
-        ├── app.js      # Dashboard logic
-        └── watch.js    # Watch-page state machine (countdown / live / replay)
+        ├── media.js          # shared device pickers / getUserMedia
+        ├── rtc.js            # WebRTC full-mesh (perfect negotiation)
+        ├── studio.js         # host: compositor, layouts, brand, mixer, go-live
+        └── guest.js          # guest: join, greenroom, tiles, chat
 ```
 
-## 🔒 Privacy
+## ⚠️ Limitations vs. hosted StreamYard
 
-Lumio has no server. Webinar data lives in your browser's `localStorage` and inside
-the links you choose to share. The only third-party requests are the YouTube /
-Facebook player iframes and Google Fonts.
-
-## Limitations
-
-- Streams must be public and have embedding enabled on their platform.
-- The LIVE/ENDED status is schedule-based (start time + duration), not read from
-  the platform APIs — attendees can use the "show the player now" button if a
-  stream runs long or starts early.
-- Facebook live chat cannot be embedded (platform limitation); Lumio links out.
+- **Mesh, not an SFU** — great for a host + a handful of guests; for large panels
+  you'd swap the mesh for an SFU (e.g. mediasoup/LiveKit).
+- **Comments** — pulling live YouTube/Facebook comments onto the screen needs
+  each platform's API/OAuth and isn't included.
+- **CPU** — the relay transcodes with x264; budget ~1–2 cores per live stream,
+  or point `FFMPEG_PATH` at a hardware-encoder FFmpeg build.
+- **NAT** — only STUN is configured; add a TURN server for guests on restrictive
+  networks.

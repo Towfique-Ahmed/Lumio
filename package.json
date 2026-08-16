@@ -1,0 +1,18 @@
+{
+  "name": "lumio-studio",
+  "version": "2.0.0",
+  "description": "A StreamYard-style browser live streaming studio: invite guests over WebRTC, compose a branded scene, and multistream to YouTube, Facebook and any RTMP destination.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}
